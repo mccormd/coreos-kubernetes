@@ -25,6 +25,9 @@ export USE_CALICO=false
 # Determines the container runtime for kubernetes to use. Accepts 'docker' or 'rkt'.
 export CONTAINER_RUNTIME=docker
 
+# Determine the version of CNI to install
+export CNI_VER="v0.3.0"
+
 # The above settings can optionally be overridden using an environment file:
 ENV_FILE=/run/coreos-kubernetes/options.env
 
@@ -50,16 +53,17 @@ function init_config {
 }
 
 function download_kubelet {
+    local K8S_VER=${1%%_*}
+    local CNI_VER=$2
+
     echo "Downloading kubelet..."
     mkdir -p /opt/bin
     mkdir -p /opt/cni/bin
-    curl -s -L -k -o /opt/bin/kubelet "https://storage.googleapis.com/kubernetes-release/release/${K8S_VER%%_*}/bin/linux/amd64/kubelet"
+    curl -s -L -k -o /opt/bin/kubelet "https://storage.googleapis.com/kubernetes-release/release/${K8S_VER}/bin/linux/amd64/kubelet"
     chmod +x /opt/bin/kubelet
     ls -al /opt/bin
     echo "Downloading cni...."
-    curl -L -k "https://github.com/containernetworking/cni/releases/download/v0.3.0/cni-v0.3.0.txz"| xz -d | tar xvf - -C /opt/cni/bin/
-
-    return 0
+    curl -L -k "https://github.com/containernetworking/cni/releases/download/${CNI_VER}/cni-${CNI_VER}.txz"| xz -d | tar xvf - -C /opt/cni/bin/
 }
 
 function init_templates {
@@ -71,6 +75,7 @@ function init_templates {
         cat << EOF > $TEMPLATE
 [Service]
 ExecStartPre=/usr/bin/mkdir -p /etc/kubernetes/manifests
+ExecStartPre=/usr/bin/mkdir -p /etc/kubernetes/vol-plugins
 ExecStartPre=/usr/bin/mkdir -p /var/log/containers
 ExecStartPre=/usr/bin/mkdir -p /var/lib/kubelet
 ExecStartPre=/usr/bin/mkdir -p /run/kubelet
@@ -86,7 +91,8 @@ ExecStart=/opt/bin/kubelet \
         --require-kubeconfig=true \
         --kubeconfig=/etc/kubernetes/worker-kubeconfig.yaml \
         --tls-cert-file=/etc/kubernetes/ssl/worker.pem \
-        --tls-private-key-file=/etc/kubernetes/ssl/worker-key.pem
+        --tls-private-key-file=/etc/kubernetes/ssl/worker-key.pem \
+	--volume-plugin-dir=/etc/kubernetes/vol-plugins
 Restart=always
 RestartSec=10
 [Install]
@@ -292,7 +298,7 @@ EOF
 }
 
 init_config
-download_kubelet
+download_kubelet ${K8S_VER} ${CNI_VER}
 init_templates
 
 systemctl stop update-engine; systemctl mask update-engine

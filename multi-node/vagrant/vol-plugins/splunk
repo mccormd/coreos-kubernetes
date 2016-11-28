@@ -1,0 +1,165 @@
+#!/bin/bash
+
+# Copyright 2016 David McCormick, Zopa.com
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+VOLUME_PATH=/var/lib/kubelet/splunk
+
+usage() {
+        err "Invalid usage. Usage: "
+        err "\t$0 init"
+        err "\t$0 attach <json params>"
+        err "\t$0 detach <mount device>"
+        err "\t$0 mount <mount dir> <mount device> <json params>"
+        err "\t$0 unmount <mount dir>"
+        exit 1
+}
+
+err() {
+        echo -ne $* 1>&2
+}
+
+log() {
+        echo -ne $* >&1
+}
+
+ismounted() {
+        MOUNT=`findmnt -n ${MNTPATH} 2>/dev/null | cut -d' ' -f1`
+        if [ "${MOUNT}" == "${MNTPATH}" ]; then
+                echo "1"
+        else
+                echo "0"
+        fi
+}
+
+attach() {
+        OPTIONS=$1
+
+        DEV="splunkvol-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
+        # ensure we haven't collided with existing volume
+        while [[ -d "${VOLUME_PATH}/${DEV}" ]]
+        do
+          DEV="splunkvol-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
+        done
+
+        # 'attach' the new volume
+        mkdir -p ${VOLUME_PATH}/${DEV} && echo "created" >${VOLUME_PATH}/${DEV}/.status
+        if [ $? -ne 0 ]; then
+                err "{ \"status\": \"Failure\", \"message\": \"Failed, couldn't create device splunk volume directory at ${VOLUME_PATH}/${DEV}\"}"
+                exit 1
+        else
+                log "{\"status\": \"Success\", \"device\":\"${DEV}\"}"
+                exit 0
+        fi
+}
+
+detach() {
+        DEV=$1
+
+        if [[ -d "${VOLUME_PATH}/${DEV}" ]] ; then
+                echo "detached" >${VOLUME_PATH}/${DEV}/.status
+                log "{\"status\": \"Success\"}"
+                exit 0
+        else
+                log "{\"status\": \"Failed\"}"
+                exit 1
+        fi
+}
+
+
+domount() {
+        MNTPATH=$1
+        DEV=$2
+        OPS=$3
+
+        # check for fully mounted
+        if [ $(ismounted) -eq 1 ] ; then
+                log "{\"status\": \"Success\"}"
+                exit 0
+        fi
+
+        if [ ! -d "${VOLUME_PATH}/${DEV}" ] ; then
+                err "{ \"status\": \"Failure\", \"message\": \"Failed to mount device ${DEV} to ${MNTPATH} because ${VOLUME_PATH}/${DEV} doesn't exist\"}"
+                exit 1
+        fi
+
+        mkdir -p ${MNTPATH} &> /dev/null
+        mount -o bind ${VOLUME_PATH}/${DEV} ${MNTPATH} &> /dev/null
+
+        if [ $? -ne 0 ]; then
+                echo "failed" >${VOLUME_PATH}/${DEV}/.status
+                edrr "{ \"status\": \"Failure\", \"message\": \"Failed to mount device ${DEV} at ${MNTPATH}\"}"
+                exit 1
+        fi
+        echo "mounted" >${VOLUME_PATH}/${DEV}/.status
+        log "{\"status\": \"Success\"}"
+        exit 0
+}
+
+unmount() {
+        MNTPATH=$1
+        echo "Trying to unmount ${MNTPATH} >>${VOLUME_PATH}/${DEV}/.status
+        if [ $(ismounted) -eq 0 ] ; then
+                log "{\"status\": \"Success\"}"
+                exit 0
+        fi
+
+        #umount -l ${MNTPATH} &> /dev/null
+        umount -l ${MNTPATH} >>${VOLUME_PATH}/${DEV}/.status
+        if [ $? -ne 0 ]; then
+                err "{ \"status\": \"Failed\", \"message\": \"Failed to unmount volume at ${MNTPATH}\"}"
+                exit 1
+        fi
+        #rmdir ${MNTPATH} &> /dev/null
+        rmdir ${MNTPATH} >>${VOLUME_PATH}/${DEV}/.status
+        echo "unmounted" >${VOLUME_PATH}/${DEV}/.status
+        log "{\"status\": \"Success\"}"
+        exit 0
+}
+
+init() {
+        [[ ! -d "${VOLUME_PATH}" ]] && mkdir -p ${VOLUME_PATH}
+        log "{\"status\": \"Success\"}"
+        exit 0
+}
+
+op=$1
+
+if [[ "$op" -ne "init" && $# -lt 2 ]]; then
+        usage
+fi
+
+shift
+
+case "$op" in
+        init)   init $*
+                ;;
+        attach)
+                attach $*
+                ;;
+        detach)
+                detach $*
+                ;;
+        mount)
+                domount $*
+                ;;
+        unmount)
+                unmount $*
+                ;;
+        *)
+                usage
+esac
+
+exit 1
+
