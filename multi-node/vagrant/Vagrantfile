@@ -32,7 +32,7 @@ CONTROLLER_CLUSTER_IP="10.3.0.1"
 ETCD_CLOUD_CONFIG_PATH = File.expand_path("etcd-cloud-config.yaml")
 
 CONTROLLER_CLOUD_CONFIG_PATH = File.expand_path("../generic/controller-install.sh")
-WORKER_CLOUD_CONFIG_PATH = File.expand_path("../generic/worker-install.sh")
+WORKER_CLOUD_CONFIG_PATH = File.expand_path("./worker-install.sh")
 
 def etcdIP(num)
   return "172.17.4.#{num+50}"
