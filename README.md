@@ -1,3 +1,8 @@
+# Edited to run on a zopa laptop
+ * etcd-cloud-config.yaml updated to add in Zscaler certs
+ * call bash -c "" when running cert creation scripts to ensure unix like shell
+ * Update WORKER_CLOUD_CONFIG_PATH with a modified ./worker-install.sh instead of the generic version.  This script attempts to run kubelet directly on the coreos host instead of letting it be run in a rkt container.
+
 # Kubernetes on CoreOS
 
 This repo contains tooling and documentation around deploying Kubernetes using CoreOS.
