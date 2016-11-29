@@ -15,3 +15,4 @@ spec:
   - name: test
     flexVolume:
       driver: "zopa.com/splunk"
+      fsType: "ext4"
