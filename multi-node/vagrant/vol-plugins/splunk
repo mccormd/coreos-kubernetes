@@ -35,7 +35,7 @@ log() {
 }
 
 ismounted() {
-        MOUNT=`findmnt -n ${MNTPATH} 2>/dev/null | cut -d' ' -f1`
+        local MOUNT=`findmnt -n ${MNTPATH} 2>/dev/null | cut -d' ' -f1`
         if [ "${MOUNT}" == "${MNTPATH}" ]; then
                 echo "1"
         else
@@ -43,8 +43,15 @@ ismounted() {
         fi
 }
 
+# given a mounted path, work out the splunkvol 'device'
+mounted_device() {
+	local MNTPATH=$1
+	
+	findmnt $MNTPATH | tail -1 | awk '{print $2}' | sed -e 's@^.*\(splunkvol-.*\)\].*$@\1@'
+}
+
 attach() {
-        OPTIONS=$1
+        local OPTIONS=$1
 
         DEV="splunkvol-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
         # ensure we haven't collided with existing volume
@@ -65,7 +72,7 @@ attach() {
 }
 
 detach() {
-        DEV=$1
+        local DEV=$1
 
         if [[ -d "${VOLUME_PATH}/${DEV}" ]] ; then
                 echo "detached" >${VOLUME_PATH}/${DEV}/.status
@@ -79,9 +86,9 @@ detach() {
 
 
 domount() {
-        MNTPATH=$1
-        DEV=$2
-        OPS=$3
+        local MNTPATH=$1
+        local DEV=$2
+        local OPS=$3
 
         # check for fully mounted
         if [ $(ismounted) -eq 1 ] ; then
@@ -108,13 +115,14 @@ domount() {
 }
 
 unmount() {
-        MNTPATH=$1
-        echo "Trying to unmount ${MNTPATH} >>${VOLUME_PATH}/${DEV}/.status
+        local MNTPATH=$1
+        echo "Trying to unmount ${MNTPATH}" >>${VOLUME_PATH}/${DEV}/.status
         if [ $(ismounted) -eq 0 ] ; then
                 log "{\"status\": \"Success\"}"
                 exit 0
         fi
 
+	local DEV=$(mounted_device ${MNTPATH})
         #umount -l ${MNTPATH} &> /dev/null
         umount -l ${MNTPATH} >>${VOLUME_PATH}/${DEV}/.status
         if [ $? -ne 0 ]; then
