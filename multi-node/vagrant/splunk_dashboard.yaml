@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: splunk-dashboard
+  annotations:
+  labels:
+    k8s-app: splunk-dashboard
+spec:
+  containers:
+  - name: splunk-dashboard
+    image: splunk/splunk:latest
+    ports:
+    - containerPort: 9997
+    - containerPort: 8000
+    - containerPort: 1514
+    env:
+      - name: SPLUNK_START_ARGS
+        value: --accept-license --answer-yes
+      - name: SPLUNK_ENABLE_LISTEN
+        value: "9997"
+      - name: SPLUNK_ADD
+        value: tcp 1514
+      - name: SPLUNK_USER
+        value: root
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    k8s-app: splunk-dashboard
+  name: splunk-dashboard
+spec:
+  type: NodePort
+  selector:
+    k8s-app: splunk-dashboard
+  clusterIP: 10.3.0.136
+  ports:
+    - name: splunk-data
+      port: 9997
+      nodePort: 30001
+    - name: data
+      port: 1514
+      nodePort: 30002
+    - name: dashboard
+      port: 8000
+      nodePort: 30000

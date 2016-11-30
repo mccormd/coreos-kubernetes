@@ -1,0 +1,142 @@
+#!/bin/bash
+
+# Copyright 2016 David McCormick, Zopa.com
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+VOLUME_PATH=/var/lib/kubelet/splunk
+
+usage() {
+        err "Invalid usage. Usage: "
+        err "\t$0 init"
+        err "\t$0 attach <json params>"
+        err "\t$0 detach <mount device>"
+        err "\t$0 mount <mount dir> <mount device> <json params>"
+        err "\t$0 unmount <mount dir>"
+        exit 1
+}
+
+err() {
+        echo -ne $* 1>&2
+}
+
+log() {
+        echo -ne $* >&1
+}
+
+ismounted() {
+        local MOUNT=`findmnt -n ${MNTPATH} 2>/dev/null | cut -d' ' -f1`
+        if [ "${MOUNT}" == "${MNTPATH}" ]; then
+                echo "1"
+        else
+                echo "0"
+        fi
+}
+
+# given a mounted path, work out the splunkvol 'device'
+mounted_volume() {
+        local MNTPATH=$1
+
+	mount | awk '($3 == "'${MNTPATH}'") {print $1}'
+}
+
+attach() {
+	log "{\"status\": \"Not supported\"}"
+}
+
+detach() {
+	log "{\"status\": \"Not supported\"}"
+}
+
+domount() {
+        local MNTPATH=$1
+        local DEV=$2
+        local OPS=$3
+
+        local VOLNAME="splunkvol-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
+        # check for fully mounted
+        if [ $(ismounted) -eq 1 ] ; then
+                log "{\"status\": \"Success\"}"
+                exit 0
+        fi
+
+        mkdir -p ${MNTPATH} &> /dev/null
+        mkdir -p ${VOLUME_PATH}/${VOLNAME} 2>&1 >>/tmp/spvol.log
+        dd of=${VOLUME_PATH}/${VOLNAME}/sparse-volume bs=1k seek=2097152 count=0 &> /dev/null
+        mkfs.ext4 ${VOLUME_PATH}/${VOLNAME}/sparse-volume  &> /dev/null
+        mount ${VOLUME_PATH}/${VOLNAME}/sparse-volume ${MNTPATH} &> /dev/null
+
+        if [ $? -ne 0 ]; then
+                echo "failed" >${VOLUME_PATH}/${VOLNAME}/status
+                err "{ \"status\": \"Failure\", \"message\": \"Failed to mount device ${DEV} at ${MNTPATH}\"}"
+                exit 1
+        fi
+        echo "mounted" >${VOLUME_PATH}/${VOLNAME}/status
+        log "{\"status\": \"Success\"}"
+        exit 0
+}
+
+unmount() {
+        local MNTPATH=$1
+
+        if [ $(ismounted) -eq 0 ] ; then
+                log "{\"status\": \"Success\"}"
+                exit 0
+        fi
+
+        local VOL=$(mounted_volume ${MNTPATH})
+        umount -l ${MNTPATH} &> /dev/null
+        if [ $? -ne 0 ]; then
+                err "{ \"status\": \"Failed\", \"message\": \"Failed to unmount volume ${VOL} at ${MNTPATH}\"}"
+                exit 1
+        fi
+        echo "unmounted" >${VOL%%/sparse-volume}/status
+        log "{\"status\": \"Success\"}"
+        exit 0
+}
+
+init() {
+        [[ ! -d "${VOLUME_PATH}" ]] && mkdir -p ${VOLUME_PATH}
+        log "{\"status\": \"Success\"}"
+        exit 0
+}
+
+op=$1
+
+if [[ "$op" -ne "init" && $# -lt 2 ]]; then
+        usage
+fi
+
+shift
+
+case "$op" in
+        init)   init $*
+                ;;
+        attach)
+                attach $*
+                ;;
+        detach)
+                detach $*
+                ;;
+        mount)
+                domount $*
+                ;;
+        unmount)
+                unmount $*
+                ;;
+        *)
+                usage
+esac
+
+exit 1
+

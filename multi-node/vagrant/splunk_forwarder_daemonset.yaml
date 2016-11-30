@@ -1,0 +1,73 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: splunk-config 
+  namespace: kube-system
+data:
+  start-args: --accept-license --answer-yes
+  forward-server: "10.3.0.136:9997"
+  forward-server-args: -method clone
+  splunk-add: monitor /applogs/* 
+  splunk-user: root
+
+---
+apiVersion: extensions/v1beta1 
+kind: DaemonSet 
+metadata:
+  name: splunk-forwarder
+  namespace: kube-system
+  labels:
+    k8s-app: splunk-forwarder
+spec:
+  template:
+    metadata:
+      labels:
+        k8s-app: splunk-forwarder
+    spec:
+      hostNetwork: true
+      volumes:
+        - name: applogs
+          hostPath:
+            path: /var/log/splunk
+        - name: containerlogs
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: dockersocket
+          hostPath:
+            path: /var/run/docker.sock
+      containers:
+        - name: splunk-forwarder
+          image: splunk/universalforwarder:6.5.0-monitor
+          volumeMounts:
+            - mountPath: /applogs
+              name: applogs
+            - mountPath: /host/containers
+              name: containerlogs
+            - mountPath: /var/run/docker.sock
+              name: dockersocket
+          env:
+            - name: SPLUNK_START_ARGS
+              valueFrom:
+                configMapKeyRef:
+                  name: splunk-config
+                  key: start-args
+            - name: SPLUNK_FORWARD_SERVER
+              valueFrom:
+                configMapKeyRef:
+                  name: splunk-config
+                  key: forward-server
+            - name: SPLUNK_FORWARD_SERVER_ARGS
+              valueFrom:
+                configMapKeyRef:
+                  name: splunk-config
+                  key: forward-server-args
+            - name: SPLUNK_ADD
+              valueFrom:
+                configMapKeyRef:
+                  name: splunk-config
+                  key: splunk-add
+            - name: SPLUNK_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: splunk-config
+                  key: splunk-user
