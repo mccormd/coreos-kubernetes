@@ -43,11 +43,11 @@ ismounted() {
         fi
 }
 
-## given a mounted path, work out the splunkvol 'device'
-mounted_device() {
+# given a mounted path, work out the splunkvol 'device'
+mounted_volume() {
         local MNTPATH=$1
 
-        findmnt $MNTPATH | tail -1 | awk '{print $2}' | sed -e 's@^.*\(splunkvol-.*\)\].*$@\1@'
+	mount | awk '($3 == "'${MNTPATH}'") {print $1}'
 }
 
 attach() {
@@ -58,50 +58,12 @@ detach() {
 	log "{\"status\": \"Not supported\"}"
 }
 
-#attach() {
-#        local OPTIONS=$1
-#
-#        DEV="splunkvol-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
-#        # ensure we haven't collided with existing volume
-#        while [[ -d "${VOLUME_PATH}/${DEV}" ]]
-#        do
-#          DEV="splunkvol-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
-#        done
-#
-#        # 'attach' the new volume
-#        mkdir -p ${VOLUME_PATH}/${DEV} && echo "created" >${VOLUME_PATH}/${DEV}/status
-#        if [ $? -ne 0 ]; then
-#                err "{ \"status\": \"Failure\", \"message\": \"Failed, couldn't create device splunk volume directory at ${VOLUME_PATH}/${DEV}\"}"
-#                exit 1
-#        else
-#                log "{\"status\": \"Success\", \"device\":\"${DEV}\"}"
-#                exit 0
-#        fi
-#}
-
-#detach() {
-#        local DEV=$1
-#
-#        echo "Running detach for device $DEV" >>/tmp/spvol.log
-#
-#        if [[ -d "${VOLUME_PATH}/${DEV}" ]] ; then
-#                echo "detached ok..." >>/tmp/spvol.log
-#                echo "detached" >${VOLUME_PATH}/${DEV}/status
-#                log "{\"status\": \"Success\"}"
-#                exit 0
-#        else
-#                log "{\"status\": \"Failed\"}"
-#                exit 1
-#        fi
-#}
-
 domount() {
         local MNTPATH=$1
         local DEV=$2
         local OPS=$3
 
         local VOLNAME="splunkvol-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
-        echo "Running mount of ${VOLUME_PATH}/${VOLNAME} to ${MNTPATH}" >>/tmp/spvol.log
         # check for fully mounted
         if [ $(ismounted) -eq 1 ] ; then
                 log "{\"status\": \"Success\"}"
@@ -110,9 +72,9 @@ domount() {
 
         mkdir -p ${MNTPATH} &> /dev/null
         mkdir -p ${VOLUME_PATH}/${VOLNAME} 2>&1 >>/tmp/spvol.log
-        dd of=${VOLUME_PATH}/${VOLNAME}/sparse-volume bs=1k seek=2097152 count=0 2>&1 >>/tmp/spvol.log
-        mkfs.ext4 ${VOLUME_PATH}/${VOLNAME}/sparse-volume  2>&1 >>/tmp/spvol.log
-        mount ${VOLUME_PATH}/${VOLNAME}/sparse-volume ${MNTPATH} 2>&1 >>/tmp/spvol.log
+        dd of=${VOLUME_PATH}/${VOLNAME}/sparse-volume bs=1k seek=2097152 count=0 &> /dev/null
+        mkfs.ext4 ${VOLUME_PATH}/${VOLNAME}/sparse-volume  &> /dev/null
+        mount ${VOLUME_PATH}/${VOLNAME}/sparse-volume ${MNTPATH} &> /dev/null
 
         if [ $? -ne 0 ]; then
                 echo "failed" >${VOLUME_PATH}/${VOLNAME}/status
@@ -127,28 +89,23 @@ domount() {
 unmount() {
         local MNTPATH=$1
 
-        echo "Running umount with path ${MNTPATH}" >>/tmp/spvol.log
         if [ $(ismounted) -eq 0 ] ; then
                 log "{\"status\": \"Success\"}"
                 exit 0
         fi
 
-        local DEV=$(mounted_device ${MNTPATH})
-        echo "mount device is ${DEV}" >>/tmp/spvol.log
-        #umount -l ${MNTPATH} &> /dev/null
-        echo "running umount -l ${MNTPATH}" >>/tmp/spvol.log
-        umount -l ${MNTPATH}
+        local VOL=$(mounted_volume ${MNTPATH})
+        umount -l ${MNTPATH} &> /dev/null
         if [ $? -ne 0 ]; then
-                err "{ \"status\": \"Failed\", \"message\": \"Failed to unmount volume at ${MNTPATH}\"}"
+                err "{ \"status\": \"Failed\", \"message\": \"Failed to unmount volume ${VOL} at ${MNTPATH}\"}"
                 exit 1
         fi
-        echo "unmounted" >${VOLUME_PATH}/${DEV}/status
+        echo "unmounted" >${VOL%%/sparse-volume}/status
         log "{\"status\": \"Success\"}"
         exit 0
 }
 
 init() {
-        echo "Running init" >>/tmp/spvol.log
         [[ ! -d "${VOLUME_PATH}" ]] && mkdir -p ${VOLUME_PATH}
         log "{\"status\": \"Success\"}"
         exit 0
