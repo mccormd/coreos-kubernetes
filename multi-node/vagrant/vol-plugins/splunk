@@ -82,6 +82,7 @@ domount() {
                 exit 1
         fi
         echo "mounted" >${VOLUME_PATH}/${VOLNAME}/status
+        echo "mountpath=\"${MNTPATH}\"" >${VOLUME_PATH}/${VOLNAME}/mountpath
         log "{\"status\": \"Success\"}"
         exit 0
 }
