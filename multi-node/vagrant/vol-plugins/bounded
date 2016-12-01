@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-VOLUME_PATH=/var/lib/kubelet/splunk
+VOLUME_PATH=/var/lib/kubelet/bounded
 
 usage() {
         err "Invalid usage. Usage: "
@@ -43,7 +43,7 @@ ismounted() {
         fi
 }
 
-# given a mounted path, work out the splunkvol 'device'
+# given a mounted path, work out the boundedvol 'device'
 mounted_volume() {
         local MNTPATH=$1
 
@@ -63,7 +63,7 @@ domount() {
         local DEV=$2
         local OPS=$3
 
-        local VOLNAME="splunkvol-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
+        local VOLNAME="boundedvol-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
         # check for fully mounted
         if [ $(ismounted) -eq 1 ] ; then
                 log "{\"status\": \"Success\"}"

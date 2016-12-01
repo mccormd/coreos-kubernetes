@@ -18,7 +18,7 @@ spec:
   volumes:
   - name: logging
     flexVolume:
-      driver: "zopa.com/splunk"
+      driver: "zopa.com/bounded"
       fsType: "ext4"
   - name: podinfo
     downwardAPI:
