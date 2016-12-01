@@ -24,11 +24,12 @@
 #  volumes:
 #    - name: logging
 #      flexVolume:
-#	 driver: "zopa.com/bounded-local"
-#	 fsType: "ext4"
+#        driver: "zopa.com/bounded-local"
+#        fsType: "ext4"
 #        options:
-#          size: 4096
-#          cleanupDelay: 500
+#          size: 4096         # size of volume in Mb
+#          cleanupDelay: 500  # delay in s before removal
+#          mirror: "true"     # mirror the volume to another location (ro)
 
 # Configuration Values
 
@@ -43,6 +44,10 @@ DEFAULT_DELAY=0
 
 # DEFAULT_SIZE: Size in MB for the sparse volume
 DEFAULT_SIZE=2048
+
+# DEFAULT_MIRROR: Whether to mirror (mount it read only elsewhere) for log
+# collection
+DEFAULT_MIRROR="false"
 
 
 usage() {
@@ -64,65 +69,69 @@ log() {
 }
 
 ismounted() {
-        local MOUNT=`findmnt -n ${MNTPATH} 2>/dev/null | cut -d' ' -f1`
-        if [ "${MOUNT}" == "${MNTPATH}" ]; then
-                echo "1"
-        else
-                echo "0"
-        fi
+	local MNTPATH=$1
+
+	local MOUNT=`findmnt -n ${MNTPATH} 2>/dev/null | cut -d' ' -f1`
+	[[ "${MOUNT}" == "${MNTPATH}" ]]
+	return $?
 }
+
 
 # given a mounted path, work out the bounded-local 'device'
 mounted_volume() {
         local MNTPATH=$1
 
-	mount | awk '($3 == "'${MNTPATH}'") {print $1}'
+        mount | awk '($3 == "'${MNTPATH}'") {print $1}'
 }
 
 attach() {
-	log "{\"status\": \"Not supported\"}"
+        log "{\"status\": \"Not supported\"}"
 }
 
 detach() {
-	log "{\"status\": \"Not supported\"}"
+        log "{\"status\": \"Not supported\"}"
 }
 
 domount() {
         local MNTPATH=$1
-        local DEV=$2
-        local OPS=$3
+        # Mount device option is missing if attach returns not supported so json opts become argument 2.
+        #local DEV=$2
+        local OPS=$2
 
-	# Read mount options for size and clean up delay
-	local SIZE=$(echo $OPS | jq -r '.size') 
-	[[ "$SIZE" == "null" ]] && SIZE=${DEFAULT_SIZE}
-	local DELAY=$(echo $OPS | jq -r '.cleanupDelay') 
-	[[ "$DELAY" == "null" ]] && DELAY=${DEFAULT_DELAY}
+        # Read mount options for size and clean up delay
+        local SIZE=$(echo $OPS | jq -r '.size')
+        local DELAY=$(echo $OPS | jq -r '.cleanupDelay')
+        local MIRROR=$(echo $OPS | jq -r '.mirror')
+        [[ "$SIZE" == "null" ]] && SIZE=${DEFAULT_SIZE}
+        [[ "$DELAY" == "null" ]] && DELAY=${DEFAULT_DELAY}
+        [[ "$MIRROR" == "null" ]] && MIRROR=${DEFAULT_MIRROR}
 
         local VOLNAME="bounded-local-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
         # check for already mounted
-        if [ $(ismounted) -eq 1 ] ; then
+        if ismounted ${MNTPATH}; then
                 log "{\"status\": \"Success\"}"
                 exit 0
         fi
 
-	# create the sparse-file and mount it
+        # create the sparse-file and mount it
         mkdir -p ${MNTPATH} &> /dev/null
         mkdir -p ${VOLUME_PATH}/${VOLNAME} 2>&1 >>/tmp/spvol.log
         dd of=${VOLUME_PATH}/${VOLNAME}/sparse-volume bs=1024k seek=${SIZE} count=0 &> /dev/null
         mkfs.ext4 ${VOLUME_PATH}/${VOLNAME}/sparse-volume  &> /dev/null
         mount ${VOLUME_PATH}/${VOLNAME}/sparse-volume ${MNTPATH} &> /dev/null
         if [ $? -ne 0 ]; then
-		local TIMENOW=$(date +%s)
+                local TIMENOW=$(date +%s)
                 echo "failed ${TIMENOW}" >${VOLUME_PATH}/${VOLNAME}/status
                 err "{ \"status\": \"Failure\", \"message\": \"Failed to mount device ${DEV} at ${MNTPATH}\"}"
                 exit 1
         fi
 
-	#write meta-data
-	local TIMENOW=$(date +%s)
+        #write meta-data
+        local TIMENOW=$(date +%s)
         echo "mounted ${TIMENOW}" >${VOLUME_PATH}/${VOLNAME}/status
         echo "${MNTPATH}" >${VOLUME_PATH}/${VOLNAME}/mountpath
         echo "${DELAY}" >${VOLUME_PATH}/${VOLNAME}/cleanup_delay
+        echo "${MIRROR}" >${VOLUME_PATH}/${VOLNAME}/mirror
 
         log "{\"status\": \"Success\"}"
         exit 0
@@ -131,31 +140,31 @@ domount() {
 unmount() {
         local MNTPATH=$1
 
-        if [ $(ismounted) -eq 0 ] ; then
+        if ! ismounted ${MNTPATH}; then
                 log "{\"status\": \"Success\"}"
                 exit 0
         fi
 
-	# do the unmount
+        # do the unmount
         local VOL=$(mounted_volume ${MNTPATH})
         local VOLPATH=${VOL%%/sparse-volume}
         umount -l ${MNTPATH} &> /dev/null
         if [ $? -ne 0 ]; then
-		local TIMENOW=$(date +%s)
-        	echo "failed ${TIMENOW}" >${VOLPATH}/status
+                local TIMENOW=$(date +%s)
+                echo "failed ${TIMENOW}" >${VOLPATH}/status
                 err "{ \"status\": \"Failed\", \"message\": \"Failed to unmount volume ${VOL} at ${MNTPATH}\"}"
                 exit 1
         fi
 
-	# Remove immediately if cleanup_delay is 0
-	# or just mark as unmounted for later clean up.
-	local CLEAN_DELAY=$(cat ${VOLPATH}/cleanup_delay)
-	if [[ "$CLEAN_DELAY" == "0" ]]; then
-		rm -rf ${VOLPATH}
-	else
-		local TIMENOW=$(date +%s)
-        	echo "unmounted ${TIMENOW}" >${VOLPATH}/status
-	fi
+        # Remove immediately if cleanup_delay is 0
+        # or just mark as unmounted for later clean up.
+        local CLEAN_DELAY=$(cat ${VOLPATH}/cleanup_delay)
+        if [[ "$CLEAN_DELAY" == "0" ]]; then
+                rm -rf ${VOLPATH}
+        else
+                local TIMENOW=$(date +%s)
+                echo "unmounted ${TIMENOW}" >${VOLPATH}/status
+        fi
 
         log "{\"status\": \"Success\"}"
         exit 0

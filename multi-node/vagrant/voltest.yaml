@@ -6,7 +6,7 @@ metadata:
     launched_as: part_of_voltest
   labels:
     k8s-app: nginx
-    voltest: true
+    voltestpod: "true"
 spec:
   containers:
   - name: nginx
@@ -19,8 +19,8 @@ spec:
   volumes:
   - name: logging
     flexVolume:
-      driver: "zopa.com/bounded-local"
-      fsType: "ext4"
+      driver: zopa.com/bounded-local
+      fsType: ext4
   - name: podinfo
     downwardAPI:
       items:
@@ -41,12 +41,12 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: bounded-4g-500delay
+  name: bounded-5g-500delay
   annotations:
     launched_as: part_of_voltest
   labels:
     k8s-app: nginx
-    voltest: true
+    voltestpod: "true"
 spec:
   containers:
   - name: nginx
@@ -59,11 +59,12 @@ spec:
   volumes:
   - name: logging
     flexVolume:
-      driver: "zopa.com/bounded-local"
-      fsType: "ext4"
+      driver: zopa.com/bounded-local
+      fsType: ext4
       options:
-        size: 4096
-        cleanupDelay: 500
+        size: "4096"
+        cleanupDelay: "60"
+        mirror: "true"
   - name: podinfo
     downwardAPI:
       items:

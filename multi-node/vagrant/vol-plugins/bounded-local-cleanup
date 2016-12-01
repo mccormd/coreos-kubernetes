@@ -1,0 +1,155 @@
+#!/bin/bash
+
+# Copyright 2016 David McCormick, Zopa.com
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Configuration VARS
+# RUN_LOOP_DELAY seconds - the amount of time to wait before starting another run.
+# VOLUME_PATH: The location of the local sparse volumes and meta-data
+
+# Defaults
+DEFAULT_PATH=/var/lib/kubelet/bounded-local
+DEFAULT_LOGGING_PATH=/var/log/splunk
+
+[[ -z "${VOLUME_PATH}" ]] && VOLUME_PATH=${DEFAULT_PATH}
+[[ ! -e "${VOLUME_PATH}" ]] && mkdir -p ${VOLUME_PATH}
+[[ -z "${LOGGING_PATH}" ]] && LOGGING_PATH=${DEFAULT_LOGGING_PATH}
+[[ ! -e "${LOGGING_PATH}" ]] && mkdir -p ${LOGGING_PATH}
+
+# is the path a mount or not?
+ismounted() {
+        local MNTPATH=$1
+
+        local MOUNT=`findmnt -n ${MNTPATH} 2>/dev/null | cut -d' ' -f1`
+        [[ "${MOUNT}" == "${MNTPATH}" ]]
+        return $?
+}
+
+# Get the kubernetes metadata from a local cache within the volume or go looking inside the mounted pod
+# for a downward-api volume called 'podinfo' including files for each metadata.
+get_kubeinfo() {
+        local META=$1
+        local VOL=$2
+
+        if [[ -f "${VOL}/${META}" ]]; then
+                cat "${VOL}/${META}"
+        else
+                local MNTPATH=$(cat ${VOL}/mountpath)
+                local PODPATH=${MNTPATH%%/volumes/*}
+                if [[ -f "${PODPATH}/volumes/kubernetes.io~downward-api/podinfo/${META}" ]]; then
+                        cat "${PODPATH}/volumes/kubernetes.io~downward-api/podinfo/${META}" | tee ${VOL}/${META}
+                else
+                        echo ""
+                fi
+        fi
+}
+
+# Get kubernetes namespace and pod and then make sure we have a ro logging mount created.
+check_logging_mirror() {
+        local VOL=$1
+        local MNTPATH=$2
+        local SHORTVOL=${VOL%%/sparse-volume}
+        local SHORTVOL=${VOL##*/}
+
+        local NAMESPACE=$(get_kubeinfo namespace ${VOL})
+        local PODNAME=$(get_kubeinfo podname ${VOL})
+        if [[ -n "${NAMESPACE}" && -n "${PODNAME}" ]]; then
+                local LOGMOUNT="${LOGGING_PATH}/namespace=${NAMESPACE}/pod=${PODNAME}"
+                [[ ! -d "${LOGMOUNT}" ]] && mkdir -p ${LOGMOUNT}
+
+                if ! ismounted ${LOGMOUNT}; then
+                        echo "Creating logging read-only mount ${LOGMOUNT} to ${VOL}"
+                        echo "mount -o loop,ro,noexec,noload ${VOL}/sparse-volume ${LOGMOUNT}"
+                        mount -o loop,ro,noexec,noload ${VOL}/sparse-volume ${LOGMOUNT}
+                        if [[ "$?" -ne 0 ]]; then
+                                echo "Error creating logging mirror mount!"
+                        fi
+                fi
+        else
+                echo "Will not create mirror for $SHORTVOL without downward api volume 'podinfo' with namespace and podname."
+        fi
+}
+
+# when a sparse volume is removed we need to make sure that it's logging mount is also removed.
+remove_logging_mirror() {
+        local VOL=$1
+        local MNTPATH=$2
+        local SHORTVOL=${VOL%%/sparse-volume}
+        local SHORTVOL=${VOL##*/}
+
+        echo "do something to correctly remove the mirror volume"
+}
+
+
+# main loop of program (will break out if RUN_LOOP_DELAY is not set)
+while true; do
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Running bounded-volume cleanup for ${VOLUME_PATH}"
+        for VOL in ${VOLUME_PATH}/*
+        do
+                [[ "${VOL}" =~ \*$ ]] && break
+
+                SHORTVOL=${VOL%%/sparse-volume}
+                SHORTVOL=${VOL##*/}
+                STATUS=$(cat ${VOL}/status | awk '{print $1}')
+                WHEN=$(cat ${VOL}/status | awk '{print $2}')
+                MNTPATH=$(cat ${VOL}/mountpath)
+
+                case ${STATUS} in
+                  mounted) echo "${STATUS} ${SHORTVOL} since $(date -d @${WHEN} +'%Y/%m/%d %H:%M:%S')"
+
+                           if ! ismounted ${MNTPATH}; then
+                                   echo "ERROR! ${SHORTVOL} is not correctly mounted to $MNTPATH, marking as failed!"
+                                   TIMENOW=$(date +%s)
+                                   echo "failed ${TIMENOW}" >${VOL}/status
+                           else
+                                if [[ -f "${VOL}/mirror" ]]; then
+                                        # check logging mirror if set to true
+                                        [[ $(cat "${VOL}/mirror") == "true" ]] && check_logging_mirror ${VOL} ${MNTPATH}
+                                fi
+                           fi
+                           ;;
+
+                  failed|unmounted)
+                           DELAY=$(cat ${VOL}/cleanup_delay)
+                           EXPIRES=$((${WHEN} + ${DELAY}))
+                           TIMENOW=$(date +%s)
+                           if [[ ${EXPIRES} -lt ${TIMENOW} ]]; then
+                                  EXPIREDTIME=$((${TIMENOW} - ${EXPIRES}))
+                                  echo "Expired ${SHORTVOL} expired ${EXPIREDTIME} seconds ago"
+
+                                  rm -rf ${VOLUME_PATH}/${SHORTVOL}
+                                  if [[ -f "${VOL}/mirror" ]]; then
+                                        # remove logging mirror if set to true
+                                        [[ $(cat "${VOL}/mirror") == "true" ]] && remove_logging_mirror ${VOL} ${MNTPATH}
+                                  fi
+                                  echo "Removing volume path: rm -rf ${VOLUME_PATH}/${SHORTVOL}"
+                                  rm -rf ${VOLUME_PATH}/${SHORTVOL}
+                           else
+                                  TOGO=$((${EXPIRES} - ${TIMENOW}))
+                                  echo "${STATUS} ${SHORTVOL} has ${TOGO} secs until expiry."
+                           fi
+                           ;;
+                  *)       echo "ERROR - unknown status ${STATUS}!!!"
+                           ;;
+                esac
+
+        done
+
+        # exit loop if RUN_LOOP_DELAY not set
+        [[ -z "${RUN_LOOP_DELAY}" ]] && break
+        sleep ${RUN_LOOP_DELAY}
+done
+
+exit 0
+
