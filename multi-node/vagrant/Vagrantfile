@@ -192,9 +192,9 @@ Vagrant.configure("2") do |config|
 
       provisionMachineSSL(worker,"worker","kube-worker-#{workerIP}",[workerIP])
 
-      # install the zopa.com~bounded flexvolume plugin
-      worker.vm.provision :file, :source => "./vol-plugins/bounded", :destination => "/tmp/bounded-volplugin"
-      worker.vm.provision :shell, :inline => "mkdir -p /etc/kubernetes/vol-plugins/zopa.com~bounded && mv /tmp/bounded-volplugin /etc/kubernetes/vol-plugins/zopa.com~bounded/bounded && chmod a+x /etc/kubernetes/vol-plugins/zopa.com~bounded/bounded", :privileged => true
+      # install the zopa.com~bounded-local flexvolume plugin
+      worker.vm.provision :file, :source => "./vol-plugins/bounded-local", :destination => "/tmp/bounded-local-volplugin"
+      worker.vm.provision :shell, :inline => "mkdir -p /etc/kubernetes/vol-plugins/zopa.com~bounded-local && mv /tmp/bounded-local-volplugin /etc/kubernetes/vol-plugins/zopa.com~bounded-local/bounded-local && chmod a+x /etc/kubernetes/vol-plugins/zopa.com~bounded-local/bounded-local", :privileged => true
       worker.vm.provision :file, :source => env_file, :destination => "/tmp/coreos-kube-options.env"
       worker.vm.provision :shell, :inline => "mkdir -p /run/coreos-kubernetes && mv /tmp/coreos-kube-options.env /run/coreos-kubernetes/options.env", :privileged => true
 
