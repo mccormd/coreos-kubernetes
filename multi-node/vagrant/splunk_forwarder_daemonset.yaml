@@ -28,7 +28,7 @@ spec:
       volumes:
         - name: applogs
           hostPath:
-            path: /var/log/splunk
+            path: /var/log-collection
         - name: containerlogs
           hostPath:
             path: /var/lib/docker/containers
