@@ -27,6 +27,11 @@ DEFAULT_LOGGING_PATH=/var/log-collect
 [[ -z "${LOGGING_PATH}" ]] && LOGGING_PATH=${DEFAULT_LOGGING_PATH}
 [[ ! -e "${LOGGING_PATH}" ]] && mkdir -p ${LOGGING_PATH}
 
+# log to syslog...
+log() {
+        echo $*
+}
+
 # is the path a mount or not?
 ismounted() {
         local MNTPATH=$1
@@ -69,14 +74,14 @@ check_logging_mirror() {
                 [[ ! -d "${LOGMOUNT}" ]] && mkdir -p ${LOGMOUNT}
 
                 if ! ismounted ${LOGMOUNT}; then
-                        echo "Bind mounting ${VOL} to ${LOGMOUNT}"
+                        log "Bind mounting ${VOL} to ${LOGMOUNT}"
                         mount -o bind ${VOL}/vmount ${LOGMOUNT}
                         if [[ "$?" -ne 0 ]]; then
-                                echo "Error creating logging mirror mount!"
+                                log "Error creating logging mirror mount!"
                         fi
                 fi
         else
-                echo "Will not create mirror for $SHORTVOL without downward api volume 'podinfo' with namespace and podname."
+                log "Will not create mirror for $SHORTVOL without downward api volume 'podinfo' with namespace and podname."
         fi
 }
 
@@ -92,34 +97,36 @@ remove_logging_mirror() {
         if [[ -n "${NAMESPACE}" && -n "${PODNAME}" ]]; then
                 local LOGMOUNT="${LOGGING_PATH}/namespace=${NAMESPACE}/pod=${PODNAME}"
                 if ismounted ${LOGMOUNT}; then
-                        echo "Un-mounting and removing ${LOGMOUNT}"
+                        log "Un-mounting and removing ${LOGMOUNT}"
                         umount -l ${LOGMOUNT}
                         rm -rf ${LOGMOUNT}
                 fi
         else
-                echo "No namespace and pod for volume ${SHORTVOL} so no logging directory to clean up."
+                log "No namespace and pod for volume ${SHORTVOL} so no logging directory to clean up."
         fi
 }
 
 
 # main loop of program (will break out if RUN_LOOP_DELAY is not set)
 while true; do
-        echo "$(date +'%Y/%m/%d %H:%M:%S') Running bounded-volume cleanup for ${VOLUME_PATH}"
+        log "$(date +'%Y/%m/%d %H:%M:%S') Running bounded-volume cleanup for ${VOLUME_PATH}"
         for VOL in ${VOLUME_PATH}/*
         do
                 [[ "${VOL}" =~ \*$ ]] && break
 
                 SHORTVOL=${VOL%%/sparse-volume}
                 SHORTVOL=${VOL##*/}
+
+                [[ ! -f "${VOL}/status" || ! -f "${VOL}/mountpath" ]] && continue
                 STATUS=$(cat ${VOL}/status | awk '{print $1}')
                 WHEN=$(cat ${VOL}/status | awk '{print $2}')
                 MNTPATH=$(cat ${VOL}/mountpath)
 
                 case ${STATUS} in
-                  mounted) echo "${STATUS} ${SHORTVOL} since $(date -d @${WHEN} +'%Y/%m/%d %H:%M:%S')"
+                  mounted) log "${STATUS} ${SHORTVOL} since $(date -d @${WHEN} +'%Y/%m/%d %H:%M:%S')"
 
                            if ! ismounted ${MNTPATH}; then
-                                   echo "ERROR! ${SHORTVOL} is not correctly mounted to $MNTPATH, marking as failed!"
+                                   log "ERROR! ${SHORTVOL} is not correctly mounted to $MNTPATH, marking as failed!"
                                    TIMENOW=$(date +%s)
                                    echo "failed ${TIMENOW}" >${VOL}/status
                            else
@@ -136,9 +143,9 @@ while true; do
                            TIMENOW=$(date +%s)
                            if [[ ${EXPIRES} -lt ${TIMENOW} ]]; then
                                   EXPIREDTIME=$((${TIMENOW} - ${EXPIRES}))
-                                  echo "Expired ${SHORTVOL} expired ${EXPIREDTIME} seconds ago"
+                                  log "Expired ${SHORTVOL} expired ${EXPIREDTIME} seconds ago"
                                   if ismounted ${VOL}/vmount; then
-                                        echo "Un-mounting ${VOL}/vmount"
+                                        log "Un-mounting ${VOL}/vmount"
                                         umount -l ${VOL}/vmount
                                   fi
 
@@ -147,14 +154,14 @@ while true; do
                                         # remove logging mirror if set to true
                                         [[ $(cat "${VOL}/mirror") == "true" ]] && remove_logging_mirror ${VOL} ${MNTPATH}
                                   fi
-                                  echo "Removing volume path: rm -rf ${VOLUME_PATH}/${SHORTVOL}"
+                                  log "Removing volume path: rm -rf ${VOLUME_PATH}/${SHORTVOL}"
                                   rm -rf ${VOLUME_PATH}/${SHORTVOL}
                            else
                                   TOGO=$((${EXPIRES} - ${TIMENOW}))
-                                  echo "${STATUS} ${SHORTVOL} has ${TOGO} secs until expiry."
+                                  log "${STATUS} ${SHORTVOL} has ${TOGO} secs until expiry."
                            fi
                            ;;
-                  *)       echo "ERROR - unknown status ${STATUS}!!!"
+                  *)       log "ERROR - unknown status ${STATUS}!!!"
                            ;;
                 esac
 
