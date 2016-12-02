@@ -20,7 +20,7 @@
 
 # Defaults
 DEFAULT_PATH=/var/lib/kubelet/bounded-local
-DEFAULT_LOGGING_PATH=/var/log/splunk
+DEFAULT_LOGGING_PATH=/var/log-collect
 
 [[ -z "${VOLUME_PATH}" ]] && VOLUME_PATH=${DEFAULT_PATH}
 [[ ! -e "${VOLUME_PATH}" ]] && mkdir -p ${VOLUME_PATH}
@@ -69,9 +69,8 @@ check_logging_mirror() {
                 [[ ! -d "${LOGMOUNT}" ]] && mkdir -p ${LOGMOUNT}
 
                 if ! ismounted ${LOGMOUNT}; then
-                        echo "Creating logging read-only mount ${LOGMOUNT} to ${VOL}"
-                        echo "mount -o loop,ro,noexec,noload ${VOL}/sparse-volume ${LOGMOUNT}"
-                        mount -o loop,ro,noexec,noload ${VOL}/sparse-volume ${LOGMOUNT}
+                        echo "Bind mounting ${VOL} to ${LOGMOUNT}"
+                        mount -o bind ${VOL}/vmount ${LOGMOUNT}
                         if [[ "$?" -ne 0 ]]; then
                                 echo "Error creating logging mirror mount!"
                         fi
@@ -88,7 +87,18 @@ remove_logging_mirror() {
         local SHORTVOL=${VOL%%/sparse-volume}
         local SHORTVOL=${VOL##*/}
 
-        echo "do something to correctly remove the mirror volume"
+        local NAMESPACE=$(get_kubeinfo namespace ${VOL})
+        local PODNAME=$(get_kubeinfo podname ${VOL})
+        if [[ -n "${NAMESPACE}" && -n "${PODNAME}" ]]; then
+                local LOGMOUNT="${LOGGING_PATH}/namespace=${NAMESPACE}/pod=${PODNAME}"
+                if ismounted ${LOGMOUNT}; then
+                        echo "Un-mounting and removing ${LOGMOUNT}"
+                        umount -l ${LOGMOUNT}
+                        rm -rf ${LOGMOUNT}
+                fi
+        else
+                echo "No namespace and pod for volume ${SHORTVOL} so no logging directory to clean up."
+        fi
 }
 
 
@@ -127,6 +137,10 @@ while true; do
                            if [[ ${EXPIRES} -lt ${TIMENOW} ]]; then
                                   EXPIREDTIME=$((${TIMENOW} - ${EXPIRES}))
                                   echo "Expired ${SHORTVOL} expired ${EXPIREDTIME} seconds ago"
+                                  if ismounted ${VOL}/vmount; then
+                                        echo "Un-mounting ${VOL}/vmount"
+                                        umount -l ${VOL}/vmount
+                                  fi
 
                                   rm -rf ${VOLUME_PATH}/${SHORTVOL}
                                   if [[ -f "${VOL}/mirror" ]]; then

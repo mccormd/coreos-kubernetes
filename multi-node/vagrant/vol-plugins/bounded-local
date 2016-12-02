@@ -101,7 +101,7 @@ domount() {
         # Read mount options for size and clean up delay
         local SIZE=$(echo $OPS | jq -r '.size')
         local DELAY=$(echo $OPS | jq -r '.cleanupDelay')
-        local MIRROR=$(echo $OPS | jq -r '.mirror')
+        local MIRROR=$(echo $OPS | jq -r '.logCollectCopy')
         [[ "$SIZE" == "null" ]] && SIZE=${DEFAULT_SIZE}
         [[ "$DELAY" == "null" ]] && DELAY=${DEFAULT_DELAY}
         [[ "$MIRROR" == "null" ]] && MIRROR=${DEFAULT_MIRROR}
@@ -113,16 +113,25 @@ domount() {
                 exit 0
         fi
 
-        # create the sparse-file and mount it
+        # create the sparse-file and mount it within the volume space
         mkdir -p ${MNTPATH} &> /dev/null
-        mkdir -p ${VOLUME_PATH}/${VOLNAME} 2>&1 >>/tmp/spvol.log
+        mkdir -p ${VOLUME_PATH}/${VOLNAME}/vmount &> /dev/null
         dd of=${VOLUME_PATH}/${VOLNAME}/sparse-volume bs=1024k seek=${SIZE} count=0 &> /dev/null
         mkfs.ext4 ${VOLUME_PATH}/${VOLNAME}/sparse-volume  &> /dev/null
-        mount ${VOLUME_PATH}/${VOLNAME}/sparse-volume ${MNTPATH} &> /dev/null
+	# mount the sparse-volume to the dedicated
+        mount ${VOLUME_PATH}/${VOLNAME}/sparse-volume ${VOLUME_PATH}/${VOLNAME}/vmount &> /dev/null
         if [ $? -ne 0 ]; then
                 local TIMENOW=$(date +%s)
                 echo "failed ${TIMENOW}" >${VOLUME_PATH}/${VOLNAME}/status
-                err "{ \"status\": \"Failure\", \"message\": \"Failed to mount device ${DEV} at ${MNTPATH}\"}"
+                err "{ \"status\": \"Failure\", \"message\": \"Failed to mount device ${DEV} at ${VOLUME_PATH}/${VOLNAME}/vmount"
+                exit 1
+        fi
+	# bind mount the volume into the pod
+	mount -o bind  ${VOLUME_PATH}/${VOLNAME}/vmount ${MNTPATH}
+        if [ $? -ne 0 ]; then
+                local TIMENOW=$(date +%s)
+                echo "failed ${TIMENOW}" >${VOLUME_PATH}/${VOLNAME}/status
+                err "{ \"status\": \"Failure\", \"message\": \"Failed to mount device ${DEV} into pod ${MNTPATH}"
                 exit 1
         fi
 
@@ -160,6 +169,7 @@ unmount() {
         # or just mark as unmounted for later clean up.
         local CLEAN_DELAY=$(cat ${VOLPATH}/cleanup_delay)
         if [[ "$CLEAN_DELAY" == "0" ]]; then
+		umount -l ${VOLPATH}/vmount &> /dev/null
                 rm -rf ${VOLPATH}
         else
                 local TIMENOW=$(date +%s)

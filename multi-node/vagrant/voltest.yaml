@@ -64,7 +64,7 @@ spec:
       options:
         size: "4096"
         cleanupDelay: "60"
-        mirror: "true"
+        logCollectCopy: "true"
   - name: podinfo
     downwardAPI:
       items:
