@@ -1,6 +1,5 @@
 [Unit]
 Description=Runs the bounded-local-controller for managing bounded-local volumes and making them available for log collection.
-Requires=kubelet.service
 
 [Service]
 Environment=RUN_LOOP_DELAY=10
@@ -11,3 +10,5 @@ Type=simple
 Restart=on-failure
 RestartSec=5
 
+[Install]
+WantedBy=multi-user.target

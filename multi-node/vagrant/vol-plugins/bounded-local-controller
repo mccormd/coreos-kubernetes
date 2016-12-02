@@ -109,7 +109,7 @@ remove_logging_mirror() {
 
 # main loop of program (will break out if RUN_LOOP_DELAY is not set)
 while true; do
-        log "$(date +'%Y/%m/%d %H:%M:%S') Running bounded-volume cleanup for ${VOLUME_PATH}"
+        log "Running bounded-volume cleanup for ${VOLUME_PATH}"
         for VOL in ${VOLUME_PATH}/*
         do
                 [[ "${VOL}" =~ \*$ ]] && break
@@ -123,7 +123,7 @@ while true; do
                 MNTPATH=$(cat ${VOL}/mountpath)
 
                 case ${STATUS} in
-                  mounted) log "${STATUS} ${SHORTVOL} since $(date -d @${WHEN} +'%Y/%m/%d %H:%M:%S')"
+                  mounted) log "${SHORTVOL} ${STATUS} since $(date -d @${WHEN} +'%Y/%m/%d %H:%M:%S')"
 
                            if ! ismounted ${MNTPATH}; then
                                    log "ERROR! ${SHORTVOL} is not correctly mounted to $MNTPATH, marking as failed!"

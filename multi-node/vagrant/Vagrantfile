@@ -65,6 +65,18 @@ def provisionMachineSSL(machine,certBaseName,cn,ipAddrs)
   machine.vm.provision :shell, :inline => "mkdir -p /etc/kubernetes/ssl && tar -C /etc/kubernetes/ssl -xf /tmp/ssl.tar", :privileged => true
 end
 
+$provision_bounded_local_volume = <<SCRIPT
+mkdir -p /etc/kubernetes/vol-plugins/zopa.com~bounded-local /opt/bin
+mv /tmp/vol-plugins/bounded-local /etc/kubernetes/vol-plugins/zopa.com~bounded-local/bounded-local
+chmod a+x /etc/kubernetes/vol-plugins/zopa.com~bounded-local/bounded-local
+mv /tmp/vol-plugins/bounded-local-controller /opt/bin/bounded-local-controller
+chmod a+x /opt/bin/bounded-local-controller
+mv /tmp/vol-plugins/bounded-local-controller.service /etc/systemd/system/bounded-local-controller.service
+systemctl daemon-reload
+systemctl start bounded-local-controller.service
+systemctl enable bounded-local-controller.service
+SCRIPT
+
 Vagrant.configure("2") do |config|
   # always use Vagrant's insecure key
   config.ssh.insert_key = false
@@ -193,8 +205,9 @@ Vagrant.configure("2") do |config|
       provisionMachineSSL(worker,"worker","kube-worker-#{workerIP}",[workerIP])
 
       # install the zopa.com~bounded-local flexvolume plugin
-      worker.vm.provision :file, :source => "./vol-plugins/bounded-local", :destination => "/tmp/bounded-local-volplugin"
-      worker.vm.provision :shell, :inline => "mkdir -p /etc/kubernetes/vol-plugins/zopa.com~bounded-local && mv /tmp/bounded-local-volplugin /etc/kubernetes/vol-plugins/zopa.com~bounded-local/bounded-local && chmod a+x /etc/kubernetes/vol-plugins/zopa.com~bounded-local/bounded-local", :privileged => true
+      worker.vm.provision :file, :source => "./vol-plugins", :destination => "/tmp/"
+      worker.vm.provision :shell, :inline => $provision_bounded_local_volume, :privileged => true
+      # original provision steps..
       worker.vm.provision :file, :source => env_file, :destination => "/tmp/coreos-kube-options.env"
       worker.vm.provision :shell, :inline => "mkdir -p /run/coreos-kubernetes && mv /tmp/coreos-kube-options.env /run/coreos-kubernetes/options.env", :privileged => true
 
