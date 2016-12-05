@@ -149,7 +149,6 @@ while true; do
                                         umount -l ${VOL}/vmount
                                   fi
 
-                                  rm -rf ${VOLUME_PATH}/${SHORTVOL}
                                   if [[ -f "${VOL}/mirror" ]]; then
                                         # remove logging mirror if set to true
                                         [[ $(cat "${VOL}/mirror") == "true" ]] && remove_logging_mirror ${VOL} ${MNTPATH}
