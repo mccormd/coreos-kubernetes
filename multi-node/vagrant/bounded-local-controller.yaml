@@ -1,0 +1,47 @@
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: bounded-local-controller
+  namespace: kube-system
+  labels:
+    k8s-app: bounded-local-controller
+spec:
+  template:
+    metadata:
+      labels:
+        k8s-app: bounded-local-controller
+    spec:
+      volumes:
+        - name: volume-path
+          hostPath:
+            path: /var/lib/kubelet/bounded-local
+        - name: log-collection
+          hostPath:
+            path: /var/log-collection
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: run
+          hostPath:
+            path: /run
+      containers:
+        - name: bounded-local-controller
+          image: packages.dns.ad.zopa.com:5002/bounded-local-controller:latest
+          securityContext:
+            privileged: true 
+          env:
+            - name: RUN_LOOP_DELAY
+              value: "10"
+            - name: VOLUME_PATH
+              value: "/var/lib/kubelet/bounded-local"
+            - name: LOGGING_PATH
+              value: "/var/log-collection"
+          volumeMounts:
+            - mountPath: /var/lib/kubelet/bounded-local
+              name: volume-path
+            - mountPath: /var/log-collection
+              name: log-collection
+            - mountPath: /dev
+              name: dev
+            - mountPath: /run
+              name: run

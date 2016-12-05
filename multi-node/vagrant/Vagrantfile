@@ -204,6 +204,9 @@ Vagrant.configure("2") do |config|
 
       provisionMachineSSL(worker,"worker","kube-worker-#{workerIP}",[workerIP])
 
+      # install zopa.com certs...
+      worker.vm.provision :file, :source => "./certificates/zopacerts.tgz", :destination => "/tmp/zopacerts.tgz" 
+      worker.vm.provision :shell, :inline => "tar -C /etc/ssl/certs -xvf /tmp/zopacerts.tgz; update-ca-certificates", :privileged => true
       # install the zopa.com~bounded-local flexvolume plugin
       worker.vm.provision :file, :source => "./vol-plugins", :destination => "/tmp/"
       worker.vm.provision :shell, :inline => $provision_bounded_local_volume, :privileged => true
