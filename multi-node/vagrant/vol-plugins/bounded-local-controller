@@ -20,7 +20,13 @@
 
 # Defaults
 DEFAULT_PATH=/var/lib/kubelet/bounded-local
-DEFAULT_LOGGING_PATH=/var/log-collect
+DEFAULT_LOGGING_PATH=/var/log-collection
+
+# Access to Splunk forwarder API
+SPLUNKFWD_URL=https://localhost:8089
+SPLUNKFWD_USER=admin
+SPLUNKFWD_PASS=changeme
+CURL="/usr/bin/curl"
 
 [[ -z "${VOLUME_PATH}" ]] && VOLUME_PATH=${DEFAULT_PATH}
 [[ ! -e "${VOLUME_PATH}" ]] && mkdir -p ${VOLUME_PATH}
@@ -41,8 +47,29 @@ ismounted() {
         return $?
 }
 
-# Get the kubernetes metadata from a local cache within the volume or go looking inside the mounted pod
-# for a downward-api volume called 'podinfo' including files for each metadata.
+# call the splunk forwarder REST API using curl.
+splunk_api() {
+  local VERB=$1
+  local PATH=$2
+  local EXTRAS=$3
+  local RESULT=""
+
+  local CALL="${CURL} --fail -k -s -u ${SPLUNKFWD_USER}:${SPLUNKFWD_PASS} ${SPLUNKFWD_URL}${PATH} -X ${VERB} ${EXTRAS}"
+  log "Calling $CALL"
+  if ! RESULT=$(eval $CALL 2>&1)
+  then
+    log "Splunk API CALL FAILED!"
+    log "${RESULT}"
+    return 1
+  else
+    log "${RESULT}"
+    return 0
+  fi
+}
+
+
+# Get an element of kubernetes metadata from a local cache or go looking
+# for a downward-api volume called 'podinfo' in the pod.
 get_kubeinfo() {
         local META=$1
         local VOL=$2
@@ -53,7 +80,7 @@ get_kubeinfo() {
                 local MNTPATH=$(cat ${VOL}/mountpath)
                 local PODPATH=${MNTPATH%%/volumes/*}
                 if [[ -f "${PODPATH}/volumes/kubernetes.io~downward-api/podinfo/${META}" ]]; then
-			#convert all the spaces to %20 so that multiple values are now separated by spaces.
+                        #convert all the spaces to %20 so that multiple values are now separated by spaces.
                         cat "${PODPATH}/volumes/kubernetes.io~downward-api/podinfo/${META}" |  sed -e 's/ /%20/g' | tee ${VOL}/${META}
                 else
                         echo ""
@@ -63,53 +90,79 @@ get_kubeinfo() {
 
 # read collected metadata for a pod and convert this into the syntax for defining a splunk
 # _meta field.
-get_metadata() {
-	local VOL=$1
-	local METALINE=""
+get_splunk_metadata() {
+        local VOL=$1
+        local METALINE=""
 
-	local meta element key value
+        local META ELEMENT KEY VALUE
 
-	for meta in namespace podname labels annotations
-	do
-		for element in $(get_kubeinfo ${meta} ${VOL})
-		do
-			if [[ -n "${element}" ]]; then
-				element=$(echo ${element} | sed -e 's/%20/ /g')
-				if [[ "${element}" =~ = ]]; then
-					# structured key=value type fields become k8s_meta_key::value
-					[[ -e "${METALINE}" ]] && METALINE="k8s_${meta}_${element%%=*}::${element##*=}" || METALINE+=" k8s_${meta}_${element%%=*}::${element##*=}"
-				else
-					# simple value type fields become k8s_meta::value
-					[[ -e "${METALINE}" ]] && METALINE="k8s_${meta}::${element}" || METALINE+=" k8s_${meta}::${element}"
-				fi
-			else
-				echo "Could not lookup metadata $meta for pod with volume ${VOL}"
-			fi
-		done
-	done
+        for META in namespace podname labels annotations
+        do
+                for ELEMENT in $(get_kubeinfo ${META} ${VOL})
+                do
+                        if [[ -n "${ELEMENT}" ]]; then
+                                ELEMENT=$(echo ${ELEMENT} | sed -e 's/%20/ /g')
+                                if [[ "${ELEMENT}" =~ = ]]; then
+                                        # structured key=value type fields become k8s_meta_key::value
+                                        [[ -z "${METALINE}" ]] && METALINE="k8s_${META}_${ELEMENT%%=*}::${ELEMENT##*=}" || METALINE+=" k8s_${META}_${ELEMENT%%=*}::${ELEMENT##*=}"
+                                else
+                                        # simple value type fields become k8s_meta::value
+                                        [[ -z "${METALINE}" ]] && METALINE="k8s_${META}::${ELEMENT}" || METALINE+=" k8s_${META}::${ELEMENT}"
+                                fi
+                        fi
+                done
+        done
+        echo "${METALINE}"
 }
+
+escape_quotes() {
+        echo $* | sed -e 's/"/\\"/g'
+}
+
+configure_splunk_monitor() {
+        local VOL=$1
+        local PUID=$2
+
+        local SHORTVOL=${VOL##*/}
+        local META=$(get_splunk_metadata ${VOL})
+
+        log "Configuring vol ${SHORTVOL} for splunk collection"
+        log "Pod $PUID has meta data: ${META}"
+
+        splunk_api POST "/services/data/inputs/monitor" "-d \"name=/applogs/${PUID}/\"" && \
+        splunk_api POST "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}%2F" "-d \"_meta=$(escape_quotes ${META})\"" && \
+        splunk_api GET "/services/data/inputs/monitor/_reload"
+        if [[ "$?" -eq 0 ]]; then
+                log "Created splunk monitor and updated with pod metadata .. ok"
+                splunk_api GET /services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}
+        else
+                log "ERROR creating splunk monior!"
+        fi
+}
+
 
 # Get kubernetes namespace and pod and then make sure we have a ro logging mount created.
 check_logging_mirror() {
         local VOL=$1
         local SHORTVOL=${VOL##*/}
 
-	local MNTPATH=$(cat ${VOL}/mountpath)
-	local PODUID=${MNTPATH%%/volumes/*}
-	local PODUID=${PODUID##*/}
-
-	#test meta_lookup
-	local METATEST=$(get_metadata $VOL)
-	echo "Found meta data: _meta=${METATEST}"
+        local MNTPATH=$(cat ${VOL}/mountpath)
+        local PODUID=${MNTPATH%%/volumes/*}
+        local PODUID=${PODUID##*/}
 
         local LOGMOUNT="${LOGGING_PATH}/${PODUID}"
         [[ ! -d "${LOGMOUNT}" ]] && mkdir -p ${LOGMOUNT}
 
         if ! ismounted ${LOGMOUNT}; then
-        	log "Bind mounting ${VOL} to ${LOGMOUNT}"
-                mount -o bind ${VOL}/vmount ${LOGMOUNT}
+                log "Bind mounting ${VOL} to ${LOGMOUNT}"
+                mount -o rbind ${VOL}/vmount ${LOGMOUNT}
                 if [[ "$?" -ne 0 ]]; then
-                	log "Error creating logging mirror mount!"
+                        log "Error creating logging mirror mount!"
+                fi
+                # configure local splunk forwarder
+                configure_splunk_monitor ${VOL} ${PODUID}
+                if [[ "$?" -ne 0 ]]; then
+                        log "Error configuring splunk!"
                 fi
         fi
 }

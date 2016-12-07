@@ -126,6 +126,8 @@ domount() {
                 err "{ \"status\": \"Failure\", \"message\": \"Failed to mount device ${DEV} at ${VOLUME_PATH}/${VOLNAME}/vmount"
                 exit 1
         fi
+	# allow all uids access
+	chmod 0777 ${VOLUME_PATH}/${VOLNAME}/vmount
 	# bind mount the volume into the pod
 	mount -o bind  ${VOLUME_PATH}/${VOLNAME}/vmount ${MNTPATH}
         if [ $? -ne 0 ]; then
