@@ -53,43 +53,70 @@ get_kubeinfo() {
                 local MNTPATH=$(cat ${VOL}/mountpath)
                 local PODPATH=${MNTPATH%%/volumes/*}
                 if [[ -f "${PODPATH}/volumes/kubernetes.io~downward-api/podinfo/${META}" ]]; then
-                        cat "${PODPATH}/volumes/kubernetes.io~downward-api/podinfo/${META}" | tee ${VOL}/${META}
+			#convert all the spaces to %20 so that multiple values are now separated by spaces.
+                        cat "${PODPATH}/volumes/kubernetes.io~downward-api/podinfo/${META}" |  sed -e 's/ /%20/g' | tee ${VOL}/${META}
                 else
                         echo ""
                 fi
         fi
 }
 
+# read collected metadata for a pod and convert this into the syntax for defining a splunk
+# _meta field.
+get_metadata() {
+	local VOL=$1
+	local METALINE=""
+
+	local meta element key value
+
+	for meta in namespace podname labels annotations
+	do
+		for element in $(get_kubeinfo ${meta} ${VOL})
+		do
+			if [[ -n "${element}" ]]; then
+				element=$(echo ${element} | sed -e 's/%20/ /g')
+				if [[ "${element}" =~ = ]]; then
+					# structured key=value type fields become k8s_meta_key::value
+					[[ -e "${METALINE}" ]] && METALINE="k8s_${meta}_${element%%=*}::${element##*=}" || METALINE+=" k8s_${meta}_${element%%=*}::${element##*=}"
+				else
+					# simple value type fields become k8s_meta::value
+					[[ -e "${METALINE}" ]] && METALINE="k8s_${meta}::${element}" || METALINE+=" k8s_${meta}::${element}"
+				fi
+			else
+				echo "Could not lookup metadata $meta for pod with volume ${VOL}"
+			fi
+		done
+	done
+}
+
 # Get kubernetes namespace and pod and then make sure we have a ro logging mount created.
 check_logging_mirror() {
         local VOL=$1
-        local MNTPATH=$2
-        local SHORTVOL=${VOL%%/sparse-volume}
         local SHORTVOL=${VOL##*/}
 
-        local NAMESPACE=$(get_kubeinfo namespace ${VOL})
-        local PODNAME=$(get_kubeinfo podname ${VOL})
-        if [[ -n "${NAMESPACE}" && -n "${PODNAME}" ]]; then
-                local LOGMOUNT="${LOGGING_PATH}/namespace=${NAMESPACE}/pod=${PODNAME}"
-                [[ ! -d "${LOGMOUNT}" ]] && mkdir -p ${LOGMOUNT}
+	local MNTPATH=$(cat ${VOL}/mountpath)
+	local PODUID=${MNTPATH%%/volumes/*}
+	local PODUID=${PODUID##*/}
 
-                if ! ismounted ${LOGMOUNT}; then
-                        log "Bind mounting ${VOL} to ${LOGMOUNT}"
-                        mount -o bind ${VOL}/vmount ${LOGMOUNT}
-                        if [[ "$?" -ne 0 ]]; then
-                                log "Error creating logging mirror mount!"
-                        fi
+	#test meta_lookup
+	local METATEST=$(get_metadata $VOL)
+	echo "Found meta data: _meta=${METATEST}"
+
+        local LOGMOUNT="${LOGGING_PATH}/${PODUID}"
+        [[ ! -d "${LOGMOUNT}" ]] && mkdir -p ${LOGMOUNT}
+
+        if ! ismounted ${LOGMOUNT}; then
+        	log "Bind mounting ${VOL} to ${LOGMOUNT}"
+                mount -o bind ${VOL}/vmount ${LOGMOUNT}
+                if [[ "$?" -ne 0 ]]; then
+                	log "Error creating logging mirror mount!"
                 fi
-        else
-                log "Will not create mirror for $SHORTVOL without downward api volume 'podinfo' with namespace and podname."
         fi
 }
 
 # when a sparse volume is removed we need to make sure that it's logging mount is also removed.
 remove_logging_mirror() {
         local VOL=$1
-        local MNTPATH=$2
-        local SHORTVOL=${VOL%%/sparse-volume}
         local SHORTVOL=${VOL##*/}
 
         local NAMESPACE=$(get_kubeinfo namespace ${VOL})
@@ -132,7 +159,7 @@ while true; do
                            else
                                 if [[ -f "${VOL}/mirror" ]]; then
                                         # check logging mirror if set to true
-                                        [[ $(cat "${VOL}/mirror") == "true" ]] && check_logging_mirror ${VOL} ${MNTPATH}
+                                        [[ $(cat "${VOL}/mirror") == "true" ]] && check_logging_mirror ${VOL}
                                 fi
                            fi
                            ;;
@@ -151,7 +178,7 @@ while true; do
 
                                   if [[ -f "${VOL}/mirror" ]]; then
                                         # remove logging mirror if set to true
-                                        [[ $(cat "${VOL}/mirror") == "true" ]] && remove_logging_mirror ${VOL} ${MNTPATH}
+                                        [[ $(cat "${VOL}/mirror") == "true" ]] && remove_logging_mirror ${VOL}
                                   fi
                                   log "Removing volume path: rm -rf ${VOLUME_PATH}/${SHORTVOL}"
                                   rm -rf ${VOLUME_PATH}/${SHORTVOL}

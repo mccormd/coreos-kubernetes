@@ -7,7 +7,7 @@ data:
   start-args: --accept-license --answer-yes
   forward-server: "10.3.0.136:9997"
   forward-server-args: -method clone
-  splunk-add: monitor /applogs/* 
+  splunk-add: ""
   splunk-user: root
 
 ---
@@ -35,6 +35,9 @@ spec:
         - name: dockersocket
           hostPath:
             path: /var/run/docker.sock
+        - name: dev
+          hostPath:
+            path: /dev
       containers:
         - name: splunk-forwarder
           image: splunk/universalforwarder:6.5.0-monitor
@@ -45,6 +48,10 @@ spec:
               name: containerlogs
             - mountPath: /var/run/docker.sock
               name: dockersocket
+            - mountPath: /dev
+              name: dev
+          securityContext:
+            privileged: true
           env:
             - name: SPLUNK_START_ARGS
               valueFrom:
