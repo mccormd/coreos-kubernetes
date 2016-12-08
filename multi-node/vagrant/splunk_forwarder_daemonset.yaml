@@ -38,6 +38,9 @@ spec:
         - name: dev
           hostPath:
             path: /dev
+        - name: sys
+          hostPath:
+            path: /sys
       containers:
         - name: splunk-forwarder
           image: splunk/universalforwarder:6.5.0-monitor
@@ -50,6 +53,8 @@ spec:
               name: dockersocket
             - mountPath: /dev
               name: dev
+            - mountPath: /sys
+              name: sys
           securityContext:
             privileged: true
           env:
