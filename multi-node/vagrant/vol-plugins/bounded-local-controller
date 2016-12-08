@@ -58,7 +58,7 @@ splunk_api() {
   local RESULT=""
 
   local CALL="${CURL} --fail -k -s -u ${SPLUNKFWD_USER}:${SPLUNKFWD_PASS} ${SPLUNKFWD_URL}${PATH} -X ${VERB} ${EXTRAS}"
-  log "Calling $CALL"
+  [[ "${DEBUG}" == "true" ]] && log "Calling $CALL"
   if ! RESULT=$(eval $CALL 2>&1)
   then
     log "Splunk API CALL FAILED!"
@@ -220,7 +220,7 @@ remove_logging_mirror() {
 
 # main loop of program (will break out if RUN_LOOP_DELAY is not set)
 while true; do
-        log "Running bounded-volume cleanup for ${VOLUME_PATH}"
+        log "Running bounded-local-controller main loop over ${VOLUME_PATH}"
         for VOL in ${VOLUME_PATH}/*
         do
                 [[ "${VOL}" =~ \*$ ]] && break
@@ -232,6 +232,11 @@ while true; do
                 STATUS=$(cat ${VOL}/status | awk '{print $1}')
                 WHEN=$(cat ${VOL}/status | awk '{print $2}')
                 MNTPATH=$(cat ${VOL}/mountpath)
+
+		# always maintain logging mirror regarless of volume status (to give short lived pods a chance to log)
+                if [[ -f "${VOL}/mirror" ]]; then
+                	[[ $(cat "${VOL}/mirror") == "true" ]] && check_logging_mirror ${VOL}
+                fi
 
                 case ${STATUS} in
                   mounted) log "${SHORTVOL} ${STATUS} since $(date -d @${WHEN} +'%Y/%m/%d %H:%M:%S')"
@@ -274,7 +279,6 @@ while true; do
                   *)       log "ERROR - unknown status ${STATUS}!!!"
                            ;;
                 esac
-
         done
 
         # exit loop if RUN_LOOP_DELAY not set
@@ -283,5 +287,4 @@ while true; do
 done
 
 exit 0
-
 
