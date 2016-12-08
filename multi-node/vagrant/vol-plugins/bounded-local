@@ -129,7 +129,7 @@ domount() {
 	# allow all uids access
 	chmod 0777 ${VOLUME_PATH}/${VOLNAME}/vmount
 	# bind mount the volume into the pod
-	mount -o bind  ${VOLUME_PATH}/${VOLNAME}/vmount ${MNTPATH}
+	mount -o rbind  ${VOLUME_PATH}/${VOLNAME}/vmount ${MNTPATH}
         if [ $? -ne 0 ]; then
                 local TIMENOW=$(date +%s)
                 echo "failed ${TIMENOW}" >${VOLUME_PATH}/${VOLNAME}/status

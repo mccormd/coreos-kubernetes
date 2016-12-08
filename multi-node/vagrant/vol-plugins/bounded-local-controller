@@ -38,7 +38,7 @@ DEBUG="false"
 
 # log to syslog...
 log() {
-        echo $*
+        echo "$*"
 }
 
 # is the path a mount or not?
@@ -128,15 +128,13 @@ configure_splunk_monitor() {
 
         local SHORTVOL=${VOL##*/}
         local META=$(get_splunk_metadata ${VOL})
-
-        log "Configuring vol ${SHORTVOL} for splunk collection"
         log "Pod $PUID has meta data: ${META}"
 
         splunk_api POST "/services/data/inputs/monitor" "-d \"name=/applogs/${PUID}/\"" && \
         splunk_api POST "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}" "-d \"_meta=$(escape_quotes ${META})\"" && \
         splunk_api GET "/services/data/inputs/monitor/_reload"
         if [[ "$?" -eq 0 ]]; then
-                log "Created splunk monitor and updated with pod metadata .. ok"
+                log "[CHANGE] Created splunk monitor and updated with pod metadata .. ok"
                 splunk_api GET /services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}
         else
                 log "ERROR creating splunk monior!"
@@ -155,7 +153,7 @@ remove_splunk_monitor() {
         splunk_api DELETE "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}"  && \
         splunk_api GET "/services/data/inputs/monitor/_reload"
         if [[ "$?" -eq 0 ]]; then
-                log "Successfully removed splunk monitor .. ok"
+                log "[CHANGE] Successfully removed splunk monitor .. ok"
         else
                 log "ERROR removing splunk monior!"
                 return 1
@@ -184,7 +182,7 @@ check_logging_mirror() {
         [[ ! -d "${LOGMOUNT}" ]] && mkdir -p ${LOGMOUNT}
 
         if ! ismounted ${LOGMOUNT}; then
-                log "Bind mounting ${VOL} to ${LOGMOUNT}"
+                log "[CHANGE] Bind mounting ${VOL} to ${LOGMOUNT}"
                 mount -o rbind ${VOL}/vmount ${LOGMOUNT}
                 if [[ "$?" -ne 0 ]]; then
                         log "Error creating logging mirror mount!"
@@ -211,7 +209,7 @@ remove_logging_mirror() {
 
         remove_splunk_monitor ${PODUID}
         if ismounted ${LOGMOUNT}; then
-                log "Un-mounting and removing ${LOGMOUNT}"
+                log "[CHANGE] Un-mounting and removing ${LOGMOUNT}"
                 umount -l ${LOGMOUNT}
                 rm -rf ${LOGMOUNT}
         fi
@@ -258,7 +256,7 @@ while true; do
                                   EXPIREDTIME=$((${TIMENOW} - ${EXPIRES}))
                                   log "Expired ${SHORTVOL} expired ${EXPIREDTIME} seconds ago"
                                   if ismounted ${VOL}/vmount; then
-                                        log "Un-mounting ${VOL}/vmount"
+                                        log "[CHANGE] Un-mounting ${VOL}/vmount"
                                         umount -l ${VOL}/vmount
                                   fi
 
@@ -266,7 +264,7 @@ while true; do
                                         # remove logging mirror if set to true
                                         [[ $(cat "${VOL}/mirror") == "true" ]] && remove_logging_mirror ${VOL}
                                   fi
-                                  log "Removing volume path: rm -rf ${VOLUME_PATH}/${SHORTVOL}"
+                                  log "[CHANGE] Removing volume path: rm -rf ${VOLUME_PATH}/${SHORTVOL}"
                                   rm -rf ${VOLUME_PATH}/${SHORTVOL}
                            else
                                   TOGO=$((${EXPIRES} - ${TIMENOW}))
