@@ -28,6 +28,9 @@ SPLUNKFWD_USER=admin
 SPLUNKFWD_PASS=changeme
 CURL="/usr/bin/curl"
 
+# Debug Logging
+DEBUG="false"
+
 [[ -z "${VOLUME_PATH}" ]] && VOLUME_PATH=${DEFAULT_PATH}
 [[ ! -e "${VOLUME_PATH}" ]] && mkdir -p ${VOLUME_PATH}
 [[ -z "${LOGGING_PATH}" ]] && LOGGING_PATH=${DEFAULT_LOGGING_PATH}
@@ -59,10 +62,10 @@ splunk_api() {
   if ! RESULT=$(eval $CALL 2>&1)
   then
     log "Splunk API CALL FAILED!"
-    log "${RESULT}"
+    [[ "${DEBUG}" == "true"  ]] && log "${RESULT}"
     return 1
   else
-    log "${RESULT}"
+    [[ "${DEBUG}" == "true"  ]] && log "${RESULT}"
     return 0
   fi
 }
@@ -130,26 +133,53 @@ configure_splunk_monitor() {
         log "Pod $PUID has meta data: ${META}"
 
         splunk_api POST "/services/data/inputs/monitor" "-d \"name=/applogs/${PUID}/\"" && \
-        splunk_api POST "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}%2F" "-d \"_meta=$(escape_quotes ${META})\"" && \
+        splunk_api POST "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}" "-d \"_meta=$(escape_quotes ${META})\"" && \
         splunk_api GET "/services/data/inputs/monitor/_reload"
         if [[ "$?" -eq 0 ]]; then
                 log "Created splunk monitor and updated with pod metadata .. ok"
                 splunk_api GET /services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}
         else
                 log "ERROR creating splunk monior!"
+                return 1
         fi
+
+        return 0
+}
+
+
+remove_splunk_monitor() {
+        local PUID=$1
+
+        log "Removing splunk monitor for ${PUID}"
+
+        splunk_api DELETE "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}"  && \
+        splunk_api GET "/services/data/inputs/monitor/_reload"
+        if [[ "$?" -eq 0 ]]; then
+                log "Successfully removed splunk monitor .. ok"
+        else
+                log "ERROR removing splunk monior!"
+                return 1
+        fi
+
+        return 0
+}
+
+check_splunk_monitor() {
+        local PUID=$1
+
+        log "Checking splunk monitor for /applogs/${PUID}"
+        splunk_api GET "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}"
+        return $?
 }
 
 
 # Get kubernetes namespace and pod and then make sure we have a ro logging mount created.
 check_logging_mirror() {
         local VOL=$1
-        local SHORTVOL=${VOL##*/}
 
         local MNTPATH=$(cat ${VOL}/mountpath)
         local PODUID=${MNTPATH%%/volumes/*}
         local PODUID=${PODUID##*/}
-
         local LOGMOUNT="${LOGGING_PATH}/${PODUID}"
         [[ ! -d "${LOGMOUNT}" ]] && mkdir -p ${LOGMOUNT}
 
@@ -158,31 +188,32 @@ check_logging_mirror() {
                 mount -o rbind ${VOL}/vmount ${LOGMOUNT}
                 if [[ "$?" -ne 0 ]]; then
                         log "Error creating logging mirror mount!"
-                fi
-                # configure local splunk forwarder
-                configure_splunk_monitor ${VOL} ${PODUID}
-                if [[ "$?" -ne 0 ]]; then
-                        log "Error configuring splunk!"
+                        return 1
                 fi
         fi
+
+        # check that splunk is monitoring this volume.
+        if ! check_splunk_monitor ${PODUID}; then
+                configure_splunk_monitor ${VOL} ${PODUID}
+        fi
+
+        return 0
 }
 
 # when a sparse volume is removed we need to make sure that it's logging mount is also removed.
 remove_logging_mirror() {
         local VOL=$1
-        local SHORTVOL=${VOL##*/}
 
-        local NAMESPACE=$(get_kubeinfo namespace ${VOL})
-        local PODNAME=$(get_kubeinfo podname ${VOL})
-        if [[ -n "${NAMESPACE}" && -n "${PODNAME}" ]]; then
-                local LOGMOUNT="${LOGGING_PATH}/namespace=${NAMESPACE}/pod=${PODNAME}"
-                if ismounted ${LOGMOUNT}; then
-                        log "Un-mounting and removing ${LOGMOUNT}"
-                        umount -l ${LOGMOUNT}
-                        rm -rf ${LOGMOUNT}
-                fi
-        else
-                log "No namespace and pod for volume ${SHORTVOL} so no logging directory to clean up."
+        local MNTPATH=$(cat ${VOL}/mountpath)
+        local PODUID=${MNTPATH%%/volumes/*}
+        local PODUID=${PODUID##*/}
+        local LOGMOUNT="${LOGGING_PATH}/${PODUID}"
+
+        remove_splunk_monitor ${PODUID}
+        if ismounted ${LOGMOUNT}; then
+                log "Un-mounting and removing ${LOGMOUNT}"
+                umount -l ${LOGMOUNT}
+                rm -rf ${LOGMOUNT}
         fi
 }
 
@@ -252,4 +283,5 @@ while true; do
 done
 
 exit 0
+
 

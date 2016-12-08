@@ -109,7 +109,6 @@ EOF
 Description=Splunk Universal Forwarder (running in RKT FLY container)
 
 [Service]
-Slice=machine.slice
 Restart=always
 RestartSec=10s
 LimitNOFILE=40000
