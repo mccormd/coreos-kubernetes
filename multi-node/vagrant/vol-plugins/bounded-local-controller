@@ -97,20 +97,24 @@ get_splunk_metadata() {
         local VOL=$1
         local METALINE=""
 
-        local META ELEMENT KEY VALUE
+        local META ELEMENT KEY VALUE METAKEY METADISPLAY
 
-        for META in namespace podname labels annotations
+        for META in namespace::namespace podname::pod labels::label
         do
-                for ELEMENT in $(get_kubeinfo ${META} ${VOL})
+		METAKEY=${META%%::*}
+		METADISPLAY=${META##*::}
+                for ELEMENT in $(get_kubeinfo ${METAKEY} ${VOL})
                 do
                         if [[ -n "${ELEMENT}" ]]; then
                                 ELEMENT=$(echo ${ELEMENT} | sed -e 's/%20/ /g')
                                 if [[ "${ELEMENT}" =~ = ]]; then
                                         # structured key=value type fields become k8s_meta_key::value
-                                        [[ -z "${METALINE}" ]] && METALINE="k8s_${META}_${ELEMENT%%=*}::${ELEMENT##*=}" || METALINE+=" k8s_${META}_${ELEMENT%%=*}::${ELEMENT##*=}"
+					KEY=${ELEMENT%%=*}	
+					VALUE=${ELEMENT##*=}
+                                        [[ -z "${METALINE}" ]] && METALINE="k8s_${METADISPLAY}_${KEY,,}::${VALUE}" || METALINE+=" k8s_${METADISPLAY}_${KEY,,}::${VALUE}"
                                 else
                                         # simple value type fields become k8s_meta::value
-                                        [[ -z "${METALINE}" ]] && METALINE="k8s_${META}::${ELEMENT}" || METALINE+=" k8s_${META}::${ELEMENT}"
+                                        [[ -z "${METALINE}" ]] && METALINE="k8s_${METADISPLAY}::${ELEMENT}" || METALINE+=" k8s_${METADISPLAY}::${ELEMENT}"
                                 fi
                         fi
                 done

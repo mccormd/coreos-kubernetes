@@ -122,7 +122,7 @@ ExecStart=/usr/bin/rkt run \
 --insecure-options=image docker://splunk/universalforwarder:latest \
 --environment=SPLUNK_START_ARGS="--accept-license --answer-yes" \
 --environment=SPLUNK_USER="root" \
---environment=SPLUNK_FORWARD_SERVER_ARGS="10.3.0.136:9997" \
+--environment=SPLUNK_FORWARD_SERVER="10.3.0.136:9997" \
 --volume volume-opt-splunk-etc,kind=host,source=/opt/splunk/etc \
 --volume volume-opt-splunk-var,kind=host,source=/opt/splunk/var \
 --volume applogs,kind=host,source=/var/log-collection,recursive=true \
