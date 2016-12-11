@@ -7,6 +7,7 @@ require 'tempfile'
 require 'yaml'
 
 ENV['SHELL']='/bin/bash'
+ENV['VAGRANT_DEFAULT_PROVIDER']='virtualbox'
 
 Vagrant.require_version ">= 1.6.0"
 
