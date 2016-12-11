@@ -19,6 +19,24 @@ $worker_vm_memory = 1024
 $etcd_count = 1
 $etcd_vm_memory = 512
 
+module OS
+  def OS.windows?
+    (/cygwin|mswin|mingw|bccwin|wince|emx/ =~ RUBY_PLATFORM) != nil
+  end
+
+  def OS.mac?
+    (/darwin/ =~ RUBY_PLATFORM) != nil
+  end
+
+  def OS.unix?
+    !OS.windows?
+  end
+
+  def OS.linux?
+    OS.unix? and not OS.mac?
+  end
+end
+
 CONFIG = File.expand_path("config.rb")
 if File.exist?(CONFIG)
   require CONFIG
@@ -53,15 +71,27 @@ initial_etcd_cluster = etcdIPs.map.with_index{ |ip, i| "e#{i+1}=http://#{ip}:238
 etcd_endpoints = etcdIPs.map.with_index{ |ip, i| "http://#{ip}:2379" }.join(",")
 
 # Generate root CA
-system("bash -c \"mkdir -p ssl && ./../../lib/init-ssl-ca ssl\"") or abort ("failed generating SSL artifacts")
+if OS.windows?
+  system("bash -c \"mkdir -p ssl && ../../lib/init-ssl-ca-win ssl\"") or abort ("failed generating SSL artifacts")
+else
+  system("mkdir -p ssl && ../../lib/init-ssl-ca ssl") or abort ("failed generating SSL artifacts")
+end
 
 # Generate admin key/cert
-system("bash -c \"./../../lib/init-ssl ssl admin kube-admin\"") or abort("failed generating admin SSL artifacts")
+if OS.windows?
+  system("bash -c \"../../lib/init-ssl-win ssl admin kube-admin\"") or abort("failed generating admin SSL artifacts")
+else
+  system("../../lib/init-ssl ssl admin kube-admin") or abort("failed generating admin SSL artifacts")
+end
 
 def provisionMachineSSL(machine,certBaseName,cn,ipAddrs)
   tarFile = "ssl/#{cn}.tar"
   ipString = ipAddrs.map.with_index { |ip, i| "IP.#{i+1}=#{ip}"}.join(",")
-  system("bash -c \"./../../lib/init-ssl ssl #{certBaseName} #{cn} #{ipString}\"") or abort("failed generating #{cn} SSL artifacts")
+  if OS.windows?
+    system("bash -c \"../../lib/init-ssl-win ssl #{certBaseName} #{cn} #{ipString}\"") or abort("failed generating #{cn} SSL artifacts")
+  else
+    system("../../lib/init-ssl ssl #{certBaseName} #{cn} #{ipString}") or abort("failed generating #{cn} SSL artifacts")
+  end
   machine.vm.provision :file, :source => tarFile, :destination => "/tmp/ssl.tar"
   machine.vm.provision :shell, :inline => "mkdir -p /etc/kubernetes/ssl && tar -C /etc/kubernetes/ssl -xf /tmp/ssl.tar", :privileged => true
 end
