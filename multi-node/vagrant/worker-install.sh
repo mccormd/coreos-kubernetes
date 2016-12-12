@@ -92,7 +92,8 @@ ExecStart=/opt/bin/kubelet \
         --kubeconfig=/etc/kubernetes/worker-kubeconfig.yaml \
         --tls-cert-file=/etc/kubernetes/ssl/worker.pem \
         --tls-private-key-file=/etc/kubernetes/ssl/worker-key.pem \
-	--volume-plugin-dir=/etc/kubernetes/vol-plugins
+	--volume-plugin-dir=/etc/kubernetes/vol-plugins \
+	--node-labels="type=worker"
 Restart=always
 RestartSec=10
 [Install]
