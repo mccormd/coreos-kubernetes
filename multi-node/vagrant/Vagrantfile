@@ -52,7 +52,7 @@ CONTROLLER_EXTERNAL_DNS="kubeapi.example.com"
 
 ETCD_CLOUD_CONFIG_PATH = File.expand_path("etcd-cloud-config.yaml")
 
-CONTROLLER_CLOUD_CONFIG_PATH = File.expand_path("../generic/controller-install.sh")
+CONTROLLER_CLOUD_CONFIG_PATH = File.expand_path("./controller-install.sh")
 WORKER_CLOUD_CONFIG_PATH = File.expand_path("./worker-install.sh")
 
 def etcdIP(num)
@@ -223,6 +223,17 @@ Vagrant.configure("2") do |config|
       controller.vm.provision :shell, :inline => "mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/", :privileged => true
       # fix the hosts file so that the hostname resolves
       controller.vm.provision :shell, :inline => "sed -e 's/^127.0.0.1.*$/127.0.0.1 localhost #{controller.vm.hostname}/' -i /etc/hosts", :privileged => true
+
+      # automatically install anything in manifests
+      Dir.glob('./manifests/controller/*.yaml') do |manifest|
+        controller.vm.provision :file, :source => manifest, :destination => "/tmp/#{File.basename(manifest)}"
+	controller.vm.provision :shell, :inline => "mkdir -p /etc/kubernetes/manifests; mv /tmp/#{File.basename(manifest)} /etc/kubernetes/manifests/#{File.basename(manifest)}", :privileged => true
+      end
+      # install our addons (those not installed as part of core install.
+      Dir.glob('./manifests/addons/*.yaml') do |addon|
+	controller.vm.provision :file, :source => addon, :destination => "/tmp/#{File.basename(addon)}"
+	controller.vm.provision :shell, :inline => "mkdir -p /etc/kubernetes/addons; mv /tmp/#{File.basename(addon)} /etc/kubernetes/addons/#{File.basename(addon)}", :privileged => true
+      end
     end
   end
 
@@ -264,6 +275,12 @@ Vagrant.configure("2") do |config|
       worker.vm.provision :shell, :inline => "mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/", :privileged => true
       # fix the hosts file so that the hostname resolves
       worker.vm.provision :shell, :inline => "sed -e 's/^127.0.0.1.*$/127.0.0.1 localhost #{worker.vm.hostname}/' -i /etc/hosts", :privileged => true
+
+      # automatically install anything in manifests
+      Dir.glob('./manifests/worker/*.yaml') do |manifest|
+        worker.vm.provision :file, :source => manifest, :destination => "/tmp/#{File.basename(manifest)}"
+	worker.vm.provision :shell, :inline => "mkdir -p /etc/kubernetes/manifests; mv /tmp/#{File.basename(manifest)} /etc/kubernetes/manifests/#{File.basename(manifest)}", :privileged => true
+      end
     end
   end
 
