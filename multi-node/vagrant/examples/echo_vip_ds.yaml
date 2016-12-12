@@ -32,8 +32,12 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
           # to use unicast
+          command: 
+          - /bin/bash
           args:
-          - --services-configmap=default/vip-configmap
+          - -c
+          - "sleep 999999"
+          #- --services-configmap=default/vip-configmap
           # unicast uses the ip of the nodes instead of multicast
           # this is useful if running in cloud providers (like AWS)
           #- --use-unicast=true

@@ -3,4 +3,4 @@ kind: ConfigMap
 metadata:
   name: vip-configmap
 data:
-  172.17.4.210: default/echoheaders
+  172.17.2.250: default/echoheaders

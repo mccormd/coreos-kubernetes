@@ -67,12 +67,36 @@ function download_kubelet {
 }
 
 function init_templates {
+    local TEMPLATE=/etc/systemd/system/kube-service-routing-fix.service
+    if [ ! -f $TEMPLATE ]; then
+        echo "TEMPLATE: $TEMPLATE"
+        mkdir -p $(dirname $TEMPLATE)
+        cat << EOF > $TEMPLATE
+[Unit]
+Description="Allow route from worker to Kubeapi service (for pods running in the host network namespace)"
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/route add -net 10.3.0.0/24 dev eth1
+[Install]
+WantedBy=multi-user.target
+EOF
+    fi
+
     local TEMPLATE=/etc/systemd/system/kubelet.service
     local uuid_file="/var/run/kubelet-pod.uuid"
     if [ ! -f $TEMPLATE ]; then
         echo "TEMPLATE: $TEMPLATE"
         mkdir -p $(dirname $TEMPLATE)
         cat << EOF > $TEMPLATE
+[Unit]
+Description="Kubelet (not running in a container)"
+After=network-online.target
+Wants=network-online.target
+
 [Service]
 ExecStartPre=/usr/bin/mkdir -p /etc/kubernetes/manifests
 ExecStartPre=/usr/bin/mkdir -p /etc/kubernetes/vol-plugins
@@ -348,6 +372,7 @@ fi
 
 systemctl enable flanneld; systemctl start flanneld
 systemctl enable kubelet; systemctl start kubelet
+systemctl enable kube-service-routing-fix; systemctl start kube-service-routing-fix
 systemctl enable splunk-forwarder; systemctl start splunk-forwarder
 
 if [ $USE_CALICO = "true" ]; then
