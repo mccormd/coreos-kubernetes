@@ -132,6 +132,8 @@ EOF
         cat << EOF > $TEMPLATE
 [Unit]
 Description=Splunk Universal Forwarder (running in RKT FLY container)
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Restart=always
@@ -139,21 +141,26 @@ RestartSec=10s
 LimitNOFILE=40000
 LimitNPROC=1048576
 
+Environment="SPLUNK_START_ARGS=--accept-license --answer-yes"
+Environment=SPLUNK_USER=root
+Environment=SPLUNK_FORWARD_SERVER=10.3.0.136:9997
 ExecStartPre=/usr/bin/mkdir --parents /var/log-collection /opt/splunk/etc /opt/splunk/var
 ExecStartPre=-/usr/bin/rkt rm --uuid-file=/var/lib/coreos/splunk-forwarder.uuid
 ExecStart=/usr/bin/rkt run \
 --stage1-from-dir=stage1-fly.aci \
 --uuid-file-save=/var/lib/coreos/splunk-forwarder.uuid \
 --insecure-options=image docker://splunk/universalforwarder:latest \
---environment=SPLUNK_START_ARGS="--accept-license --answer-yes" \
---environment=SPLUNK_USER="root" \
---environment=SPLUNK_FORWARD_SERVER="10.3.0.136:9997" \
+--inherit-env=true \
 --volume volume-opt-splunk-etc,kind=host,source=/opt/splunk/etc \
 --volume volume-opt-splunk-var,kind=host,source=/opt/splunk/var \
 --volume applogs,kind=host,source=/var/log-collection,recursive=true \
 --mount volume=applogs,target=/applogs \
 --exec="/bin/bash" -- -c "chmod +x /sbin/entrypoint.sh; /sbin/entrypoint.sh start-service"
 ExecStop=-/usr/bin/rkt stop --uuid-file=/var/lib/coreos/splunk-forwarder.uuid
+ExecStopPost=-/bin/rm -rf /opt/splunk/etc /opt/splunk/var
+
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
