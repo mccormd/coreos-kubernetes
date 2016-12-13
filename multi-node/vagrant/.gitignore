@@ -2,3 +2,4 @@
 config.rb
 ssl/
 kubectl.exe
+kubectl
