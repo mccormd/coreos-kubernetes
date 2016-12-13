@@ -20,6 +20,9 @@ spec:
           securityContext:
             privileged: true
           volumeMounts:
+            - mountPath: /etc/kubernetes
+              name: kubeconfigs
+              readOnly: true
             - mountPath: /lib/modules
               name: modules
               readOnly: true
@@ -42,6 +45,9 @@ spec:
           #- -c
           #- "sleep 999999"
           - --services-configmap=kube-system/apiserver-vip
+          - --logtostderr
+          - --stderrthreshold=2
+          - --namespace=default
           # unicast uses the ip of the nodes instead of multicast
           # this is useful if running in cloud providers (like AWS)
           #- --use-unicast=true
@@ -52,5 +58,8 @@ spec:
         - name: dev
           hostPath:
             path: /dev
+        - name: kubeconfigs
+          hostPath:
+            path: /etc/kubernetes
       nodeSelector:
         type: controller
