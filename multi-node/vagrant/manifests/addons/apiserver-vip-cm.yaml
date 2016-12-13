@@ -3,5 +3,7 @@ kind: ConfigMap
 metadata:
   name: vip-configmap
   namespace: kube-system
+  labels:
+    kubernetes.io/cluster-service: "true"
 data:
   172.17.4.100: default/kubernetes

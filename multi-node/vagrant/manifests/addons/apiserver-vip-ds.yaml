@@ -3,6 +3,8 @@ kind: DaemonSet
 metadata:
   name: apiserver-vip
   namespace: kube-system
+  label: 
+    kubernetes.io/cluster-service: "true"
 spec:
   template:
     metadata:
