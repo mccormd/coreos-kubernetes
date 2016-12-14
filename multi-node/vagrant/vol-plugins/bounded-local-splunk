@@ -1,0 +1,146 @@
+#!/bin/bash
+
+VERSION="0.1"
+
+# Copyright 2016 David McCormick, Zopa.com
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# splunk-controller provides configuration for controlling a splunk 
+# universal forwarder with bounded-local volumes for log collection.
+
+# Configuration VARS
+
+# Access to Splunk forwarder API
+SPLUNKFWD_URL=https://localhost:8089
+SPLUNKFWD_USER=admin
+SPLUNKFWD_PASS=changeme
+CURL="/usr/bin/curl"
+
+# Debug Logging
+DEBUG="false"
+
+###########################################################################
+
+# Simplistic log handling (print to stdout).
+log() {
+        echo "$*"
+}
+
+# call the splunk forwarder REST API using curl.
+splunk_api() {
+  local VERB=$1
+  local PATH=$2
+  local EXTRAS=$3
+  local RESULT=""
+
+  local CALL="${CURL} --fail -k -s -u ${SPLUNKFWD_USER}:${SPLUNKFWD_PASS} ${SPLUNKFWD_URL}${PATH} -X ${VERB} ${EXTRAS}"
+  [[ "${DEBUG}" == "true" ]] && log "Calling $CALL"
+  if ! RESULT=$(eval $CALL 2>&1)
+  then
+    log "Splunk API CALL FAILED!"
+    [[ "${DEBUG}" == "true"  ]] && log "${RESULT}"
+    return 1
+  else
+    [[ "${DEBUG}" == "true"  ]] && log "${RESULT}"
+    return 0
+  fi
+}
+
+
+escape_quotes() {
+        echo $* | sed -e 's/"/\\"/g'
+}
+
+# Add a universal forwarder config for a bounded-local volume with optional metadata
+add_splunk_monitor() {
+        local PUID=$1
+	local META=$2
+
+	local SET_META=""
+	[[ -n "${META}" ]] && SET_META="-d \"_meta=$(escape_quotes ${META})\""
+
+        splunk_api POST "/services/data/inputs/monitor" "-d \"name=/applogs/${PUID}/\"" && \
+	splunk_api POST "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}" "${SET_META} -d \"sourcetype=k8s-log\"" && \
+        splunk_api GET "/services/data/inputs/monitor/_reload"
+        if [[ "$?" -eq 0 ]]; then
+                log "[CHANGE] Created splunk monitor and updated with pod metadata .. ok"
+                splunk_api GET /services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}
+        else
+                log "ERROR creating splunk monior!"
+                return 1
+        fi
+
+        return 0
+}
+
+# Remove a forwarder config for splunk
+remove_splunk_monitor() {
+        local PUID=$1
+
+        log "Removing splunk monitor for ${PUID}"
+
+        splunk_api DELETE "/services/data/inputs/monitor/%252Fapplogs%252F${PUID}"  && \
+        splunk_api GET "/services/data/inputs/monitor/_reload"
+        if [[ "$?" -eq 0 ]]; then
+                log "[CHANGE] Successfully removed splunk monitor .. ok"
+        else
+                log "ERROR removing splunk monior!"
+                return 1
+        fi
+
+        return 0
+}
+
+# Given a pod UID report 0 for monitor exists or 1 for failure
+check_splunk_monitor() {
+        local PUID=$1
+
+        log "Checking splunk monitor for /applogs/${PUID}"
+        splunk_api GET "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}"
+        return $?
+}
+
+usage() {
+	echo "Usage: -"
+	echo "splunk-controller check pod-uid"
+	echo "splunk-controller add pod-uid [meta-data]"
+	echo "splunk-controller remove pod-uid"
+}
+
+###########################################################################
+# Command line interface - run the command and exit with the return code
+
+op=$1
+
+if [[ $# -lt 2 ]]; then
+        usage
+	exit 1
+fi
+
+shift
+
+case "$op" in
+        check)  check_splunk_monitor $*
+                ;;
+        add) add_splunk_monitor $*
+                ;;
+        remove) remove_splunk_monitor $*
+                ;;
+        *)
+                usage
+		exit 1
+esac
+
+exit $?
+
