@@ -4,6 +4,7 @@ set -e
 # define location of openssl binary manually since running this
 # script under Vagrant fails on some systems without it
 OPENSSL=$(which openssl)
+TAR=$(which tar)
 
 function usage {
     echo "USAGE: $0 <output-dir> <cert-base-name> <CN> [SAN,SAN,SAN]"
@@ -15,13 +16,13 @@ if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
     exit 1
 fi
 
-OUTDIR="$1"
+OUTDIR=$1
 CERTBASE="$2"
 CN="$3"
 SANS="$4"
 
-if [ ! -d $OUTDIR ]; then
-    echo "ERROR: output directory does not exist:  $OUTDIR"
+if [[ ! -d "$OUTDIR" ]]; then
+    echo "ERROR: output directory does not exist: $OUTDIR"
     exit 1
 fi
 
@@ -69,7 +70,7 @@ $OPENSSL genrsa -out "$KEYFILE" 2048
 $OPENSSL req -new -key "$KEYFILE" -out "$CSRFILE" -subj "//CN=$CN" -config "$CONFIGFILE"
 $OPENSSL x509 -req -in "$CSRFILE" -CA "$CAFILE" -CAkey "$CAKEYFILE" -CAcreateserial -out "$PEMFILE" -days 365 -extensions v3_req -extfile "$CONFIGFILE"
 
-tar -cf $OUTFILE -C $OUTDIR $(for  f in $CONTENTS;do printf "$(basename $f) ";done)
+$TAR --force-local -cf $OUTFILE -C $OUTDIR $(for  f in $CONTENTS;do printf "$(basename $f) ";done)
 
 echo "Bundled SSL artifacts into $OUTFILE"
 echo "$CONTENTS"

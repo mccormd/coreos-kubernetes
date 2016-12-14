@@ -55,6 +55,8 @@ ETCD_CLOUD_CONFIG_PATH = File.expand_path("etcd-cloud-config.yaml")
 CONTROLLER_CLOUD_CONFIG_PATH = File.expand_path("./controller-install.sh")
 WORKER_CLOUD_CONFIG_PATH = File.expand_path("./worker-install.sh")
 
+VAGRANT_PROJECTBASE=File.dirname(__FILE__)
+
 def etcdIP(num)
   return "172.17.4.#{num+50}"
 end
@@ -74,27 +76,27 @@ etcd_endpoints = etcdIPs.map.with_index{ |ip, i| "http://#{ip}:2379" }.join(",")
 
 # Generate root CA
 if OS.windows?
-  system("bash -c \"mkdir -p ssl && ../../lib/init-ssl-ca-win ssl\"") or abort ("failed generating SSL artifacts")
+  system("bash -c \"mkdir -p #{VAGRANT_PROJECTBASE}/ssl && ../../lib/init-ssl-ca-win #{VAGRANT_PROJECTBASE}/ssl\"") or abort ("failed generating SSL artifacts")
 else
-  system("mkdir -p ssl && ../../lib/init-ssl-ca ssl") or abort ("failed generating SSL artifacts")
+  system("mkdir -p #{VAGRANT_PROJECTBASE}/ssl && ../../lib/init-ssl-ca #{VAGRANT_PROJECTBASE}/ssl") or abort ("failed generating SSL artifacts")
 end
 
 # Generate admin key/cert
 if OS.windows?
-  system("bash -c \"../../lib/init-ssl-win ssl admin kube-admin\"") or abort("failed generating admin SSL artifacts")
+	system("bash -c \"../../lib/init-ssl-win #{VAGRANT_PROJECTBASE}/ssl admin kube-admin\"") or abort("failed generating admin SSL artifacts")
 else
-  system("../../lib/init-ssl ssl admin kube-admin") or abort("failed generating admin SSL artifacts")
+  system("../../lib/init-ssl #{VAGRANT_PROJECTBASE}/ssl admin kube-admin") or abort("failed generating admin SSL artifacts")
 end
 
 def provisionMachineSSL(machine,certBaseName,cn,ipAddrs,moreDNS=[])
-  tarFile = "ssl/#{cn}.tar"
+  tarFile = "#{VAGRANT_PROJECTBASE}/ssl/#{cn}.tar"
   dnsString = moreDNS.map.with_index { |dns, i| "DNS.#{i+5}=#{dns}"}
   ipString = ipAddrs.map.with_index { |ip, i| "IP.#{i+1}=#{ip}"}
   sanString = (dnsString + ipString).join(',')
   if OS.windows?
-    system("bash -c \"../../lib/init-ssl-win ssl #{certBaseName} #{cn} #{sanString}\"") or abort("failed generating #{cn} SSL artifacts")
+    system("bash -c \"../../lib/init-ssl-win #{VAGRANT_PROJECTBASE}/ssl #{certBaseName} #{cn} #{sanString}\"") or abort("failed generating #{cn} SSL artifacts")
   else
-    system("../../lib/init-ssl ssl #{certBaseName} #{cn} #{sanString}") or abort("failed generating #{cn} SSL artifacts")
+    system("../../lib/init-ssl #{VAGRANT_PROJECTBASE}/ssl #{certBaseName} #{cn} #{sanString}") or abort("failed generating #{cn} SSL artifacts")
   end
   machine.vm.provision :file, :source => tarFile, :destination => "/tmp/ssl.tar"
   machine.vm.provision :shell, :inline => "mkdir -p /etc/kubernetes/ssl && tar -C /etc/kubernetes/ssl -xf /tmp/ssl.tar", :privileged => true
@@ -191,6 +193,7 @@ Vagrant.configure("2") do |config|
 
       env_file = Tempfile.new('env_file', :binmode => true)
       env_file.write("ETCD_ENDPOINTS=#{etcd_endpoints}\n")
+      env_file.write("NUM_CONTROLLERS=#{$controller_count}\n")
       env_file.close
 
       controller.vm.hostname = vm_name

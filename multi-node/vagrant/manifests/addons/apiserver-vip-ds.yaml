@@ -45,9 +45,13 @@ spec:
           #- -c
           #- "sleep 999999"
           - --services-configmap=kube-system/apiserver-vip
+          - --v=2
           - --logtostderr
           - --stderrthreshold=2
           - --namespace=default
+          - --certificate-authority=/etc/kubernetes/ssl/ca.pem
+          - --client-key=/etc/kubernetes/ssl/apiserver-key.pem
+          - --client-certificate=/etc/kubernetes/ssl/apiserver.pem
           # unicast uses the ip of the nodes instead of multicast
           # this is useful if running in cloud providers (like AWS)
           #- --use-unicast=true

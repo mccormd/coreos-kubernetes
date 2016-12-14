@@ -84,6 +84,25 @@ function init_flannel {
 }
 
 function init_templates {
+    local TEMPLATE=/etc/systemd/system/kube-service-routing-fix.service
+    if [ ! -f $TEMPLATE ]; then
+        echo "TEMPLATE: $TEMPLATE"
+        mkdir -p $(dirname $TEMPLATE)
+        cat << EOF > $TEMPLATE
+[Unit]
+Description="Allow route from worker to Kubeapi service (for pods running in the host network namespace)"
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/route add -net 10.3.0.0/24 dev eth1
+[Install]
+WantedBy=multi-user.target
+EOF
+    fi
+
     local TEMPLATE=/etc/systemd/system/kubelet.service
     local uuid_file="/var/run/kubelet-pod.uuid"
     if [ ! -f $TEMPLATE ]; then
@@ -120,7 +139,7 @@ ExecStart=/usr/lib/coreos/kubelet-wrapper \
   --hostname-override=${ADVERTISE_IP} \
   --cluster_dns=${DNS_SERVICE_IP} \
   --cluster_domain=cluster.local \
-  --node-labels="type=controller"
+  --node-labels="type=controller" 
 ExecStop=-/usr/bin/rkt stop --uuid-file=${uuid_file}
 Restart=always
 RestartSec=10
@@ -281,6 +300,7 @@ spec:
     command:
     - /hyperkube
     - apiserver
+    - --apiserver-count=${NUM_CONTROLLERS}
     - --bind-address=0.0.0.0
     - --etcd-servers=${ETCD_ENDPOINTS}
     - --allow-privileged=true
@@ -961,6 +981,7 @@ if [ $CONTAINER_RUNTIME = "rkt" ]; then
         systemctl enable rkt-api
 fi
 
+systemctl enable kube-service-routing-fix; systemctl start kube-service-routing-fix
 systemctl enable flanneld; systemctl start flanneld
 systemctl enable kubelet; systemctl start kubelet
 
