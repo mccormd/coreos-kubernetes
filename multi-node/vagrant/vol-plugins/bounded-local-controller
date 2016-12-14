@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.3"
+VERSION="0.4"
 
 # Copyright 2016 David McCormick, Zopa.com
 #
@@ -28,7 +28,7 @@ DEFAULT_LOGGING_PATH=/var/log-collection
 DEBUG="false"
 
 # Logging backend plugin (splunk is only option at present)
-LOGGING_BACKEND_PLUGIN="splunk"
+LOGGING_BACKEND_PLUGIN="/opt/bin/bounded-local-splunk"
 
 [[ -z "${VOLUME_PATH}" ]] && VOLUME_PATH=${DEFAULT_PATH}
 [[ ! -e "${VOLUME_PATH}" ]] && mkdir -p ${VOLUME_PATH}
@@ -120,8 +120,8 @@ check_logging_mirror() {
 
         # if using a log collector plugin then call out to check it and configure if needed. 
 	if [[ -n "${LOGGING_BACKEND_PLUGIN}" ]]; then
-        	if ! bounded-local-${LOGGING_BACKEND_PLUGIN} check ${PODUID}; then
-                	if ! bounded-local-${LOGGING_BACKEND_PLUGIN} configure ${PODUID} $(get_pod_metadata ${VOL}); then
+        	if ! ${LOGGING_BACKEND_PLUGIN} check ${PODUID}; then
+                	if ! ${LOGGING_BACKEND_PLUGIN} add ${PODUID} $(get_pod_metadata ${VOL}); then
 				log "ERROR! Could not configure the log monitor via the ${LOGGING_BACKEND_PLUGIN} logging plugin."
 				return 1
 			fi
@@ -142,7 +142,7 @@ remove_logging_mirror() {
 
 	# Call out to the logging collector plugin to remove any local configuration
 	if [[ -n "${LOGGING_BACKEND_PLUGIN}" ]]; then
-		if ! bounded-local-${LOGGING_BACKEND_PLUGIN} remove ${PODUID}; then
+		if ! ${LOGGING_BACKEND_PLUGIN} remove ${PODUID}; then
 			log "ERROR! Removing logging configuration via the ${LOGGING_BACKEND_PLUGIN} logging plugin."
 			return 1
 		fi
