@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2"
+VERSION="0.3"
 
 # Copyright 2016 David McCormick, Zopa.com
 #
@@ -24,14 +24,11 @@ VERSION="0.2"
 DEFAULT_PATH=/var/lib/kubelet/bounded-local
 DEFAULT_LOGGING_PATH=/var/log-collection
 
-# Access to Splunk forwarder API
-SPLUNKFWD_URL=https://localhost:8089
-SPLUNKFWD_USER=admin
-SPLUNKFWD_PASS=changeme
-CURL="/usr/bin/curl"
-
 # Debug Logging
 DEBUG="false"
+
+# Logging backend plugin (splunk is only option at present)
+LOGGING_BACKEND_PLUGIN="splunk"
 
 [[ -z "${VOLUME_PATH}" ]] && VOLUME_PATH=${DEFAULT_PATH}
 [[ ! -e "${VOLUME_PATH}" ]] && mkdir -p ${VOLUME_PATH}
@@ -52,30 +49,9 @@ ismounted() {
         return $?
 }
 
-# call the splunk forwarder REST API using curl.
-splunk_api() {
-  local VERB=$1
-  local PATH=$2
-  local EXTRAS=$3
-  local RESULT=""
-
-  local CALL="${CURL} --fail -k -s -u ${SPLUNKFWD_USER}:${SPLUNKFWD_PASS} ${SPLUNKFWD_URL}${PATH} -X ${VERB} ${EXTRAS}"
-  [[ "${DEBUG}" == "true" ]] && log "Calling $CALL"
-  if ! RESULT=$(eval $CALL 2>&1)
-  then
-    log "Splunk API CALL FAILED!"
-    [[ "${DEBUG}" == "true"  ]] && log "${RESULT}"
-    return 1
-  else
-    [[ "${DEBUG}" == "true"  ]] && log "${RESULT}"
-    return 0
-  fi
-}
-
-
 # Get an element of kubernetes metadata from a local cache or go looking
 # for a downward-api volume called 'podinfo' in the pod.
-get_kubeinfo() {
+lookup_metadata_item() {
         local META=$1
         local VOL=$2
 
@@ -93,9 +69,8 @@ get_kubeinfo() {
         fi
 }
 
-# read collected metadata for a pod and convert this into the syntax for defining a splunk
-# _meta field.
-get_splunk_metadata() {
+# read collected metadata for a pod and output as a single line of values.
+get_pod_metadata() {
         local VOL=$1
         local METALINE=""
 
@@ -105,7 +80,7 @@ get_splunk_metadata() {
         do
 		METAKEY=${META%%::*}
 		METADISPLAY=${META##*::}
-                for ELEMENT in $(get_kubeinfo ${METAKEY} ${VOL})
+                for ELEMENT in $(lookup_metadata_item ${METAKEY} ${VOL})
                 do
                         if [[ -n "${ELEMENT}" ]]; then
                                 ELEMENT=$(echo ${ELEMENT} | sed -e 's/%20/ /g')
@@ -123,59 +98,6 @@ get_splunk_metadata() {
         done
         echo "${METALINE}"
 }
-
-escape_quotes() {
-        echo $* | sed -e 's/"/\\"/g'
-}
-
-configure_splunk_monitor() {
-        local VOL=$1
-        local PUID=$2
-
-        local SHORTVOL=${VOL##*/}
-        local META=$(get_splunk_metadata ${VOL})
-        log "Pod $PUID has meta data: ${META}"
-
-        splunk_api POST "/services/data/inputs/monitor" "-d \"name=/applogs/${PUID}/\"" && \
-	splunk_api POST "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}" "-d \"_meta=$(escape_quotes ${META})\" -d \"sourcetype=k8s-log\"" && \
-        splunk_api GET "/services/data/inputs/monitor/_reload"
-        if [[ "$?" -eq 0 ]]; then
-                log "[CHANGE] Created splunk monitor and updated with pod metadata .. ok"
-                splunk_api GET /services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}
-        else
-                log "ERROR creating splunk monior!"
-                return 1
-        fi
-
-        return 0
-}
-
-
-remove_splunk_monitor() {
-        local PUID=$1
-
-        log "Removing splunk monitor for ${PUID}"
-
-        splunk_api DELETE "/services/data/inputs/monitor/%252Fapplogs%252F${PUID}"  && \
-        splunk_api GET "/services/data/inputs/monitor/_reload"
-        if [[ "$?" -eq 0 ]]; then
-                log "[CHANGE] Successfully removed splunk monitor .. ok"
-        else
-                log "ERROR removing splunk monior!"
-                return 1
-        fi
-
-        return 0
-}
-
-check_splunk_monitor() {
-        local PUID=$1
-
-        log "Checking splunk monitor for /applogs/${PUID}"
-        splunk_api GET "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}"
-        return $?
-}
-
 
 # Get kubernetes namespace and pod and then make sure we have a ro logging mount created.
 check_logging_mirror() {
@@ -196,10 +118,15 @@ check_logging_mirror() {
                 fi
         fi
 
-        # check that splunk is monitoring this volume.
-        if ! check_splunk_monitor ${PODUID}; then
-                configure_splunk_monitor ${VOL} ${PODUID}
-        fi
+        # if using a log collector plugin then call out to check it and configure if needed. 
+	if [[ -n "${LOGGING_BACKEND_PLUGIN}" ]]; then
+        	if ! bounded-local-${LOGGING_BACKEND_PLUGIN} check ${PODUID}; then
+                	if ! bounded-local-${LOGGING_BACKEND_PLUGIN} configure ${PODUID} $(get_pod_metadata ${VOL}); then
+				log "ERROR! Could not configure the log monitor via the ${LOGGING_BACKEND_PLUGIN} logging plugin."
+				return 1
+			fi
+        	fi
+	fi
 
         return 0
 }
@@ -213,13 +140,24 @@ remove_logging_mirror() {
         local PODUID=${PODUID##*/}
         local LOGMOUNT="${LOGGING_PATH}/${PODUID}"
 
-        remove_splunk_monitor ${PODUID}
+	# Call out to the logging collector plugin to remove any local configuration
+	if [[ -n "${LOGGING_BACKEND_PLUGIN}" ]]; then
+		if ! bounded-local-${LOGGING_BACKEND_PLUGIN} remove ${PODUID}; then
+			log "ERROR! Removing logging configuration via the ${LOGGING_BACKEND_PLUGIN} logging plugin."
+			return 1
+		fi
+	fi
+
+	# remove the logging volume copy...
         if ismounted ${LOGMOUNT}; then
                 log "[CHANGE] Un-mounting and removing ${LOGMOUNT}"
                 umount -l ${LOGMOUNT}
                 rm -rf ${LOGMOUNT}
         fi
+	return 0
 }
+
+#################################################################################################################
 
 # main loop of program (will break out if RUN_LOOP_DELAY is not set)
 while true; do

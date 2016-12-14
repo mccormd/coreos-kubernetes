@@ -106,6 +106,8 @@ mv /tmp/vol-plugins/bounded-local /etc/kubernetes/vol-plugins/zopa.com~bounded-l
 chmod a+x /etc/kubernetes/vol-plugins/zopa.com~bounded-local/bounded-local
 mv /tmp/vol-plugins/bounded-local-controller /opt/bin/bounded-local-controller
 chmod a+x /opt/bin/bounded-local-controller
+mv /tmp/vol-plugins/bounded-local-splunk /opt/bin/bounded-local-splunk
+chmod a+x /opt/bin/bounded-local-splunk
 mv /tmp/vol-plugins/bounded-local-controller.service /etc/systemd/system/bounded-local-controller.service
 systemctl daemon-reload
 systemctl start bounded-local-controller.service
