@@ -44,7 +44,7 @@ resolve_path() {
 echo "Setting up kubeconfig file..."
 PWD=$(pwd)
 
-./kubectl config set-cluster my-kube-cluster --server=https://172.17.4.100 --certificate-authority="$(resolve_path ${PWD}/ssl/ca.pem)"
+./kubectl config set-cluster my-kube-cluster --server=https://172.17.4.101 --certificate-authority="$(resolve_path ${PWD}/ssl/ca.pem)"
 ./kubectl config set-credentials my-kube-admin --certificate-authority="$(resolve_path ${PWD}/ssl/ca.pem)" \
   --client-key="$(resolve_path ${PWD}/ssl/admin-key.pem)" \
   --client-certificate="$(resolve_path ${PWD}/ssl/admin.pem)"
