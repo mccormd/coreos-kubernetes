@@ -1,8 +1,8 @@
 #!/bin/bash
 
-VERSION="0.4"
+VERSION="0.5"
 
-# Copyright 2016 David McCormick, Zopa.com
+# Copyright 2016 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -121,7 +121,7 @@ check_logging_mirror() {
         # if using a log collector plugin then call out to check it and configure if needed. 
 	if [[ -n "${LOGGING_BACKEND_PLUGIN}" ]]; then
         	if ! ${LOGGING_BACKEND_PLUGIN} check ${PODUID}; then
-                	if ! ${LOGGING_BACKEND_PLUGIN} add ${PODUID} $(get_pod_metadata ${VOL}); then
+                	if ! ${LOGGING_BACKEND_PLUGIN} add ${PODUID} "$(get_pod_metadata ${VOL})"; then
 				log "ERROR! Could not configure the log monitor via the ${LOGGING_BACKEND_PLUGIN} logging plugin."
 				return 1
 			fi

@@ -2,7 +2,7 @@
 
 VERSION="0.2"
 
-# Copyright 2016 David McCormick, Zopa.com
+# Copyright 2016 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,8 +30,8 @@ VERSION="0.2"
 #        fsType: "ext4"
 #        options:
 #          size: 4096         # size of volume in Mb
-#          cleanupDelay: 500  # delay in s before removal
-#          mirror: "true"     # mirror the volume to another location (ro)
+#          cleanupDelay: 500  # delay in seconds before removal
+#          logCollection: "true"     # mirror the volume for log collection
 
 # Configuration Values
 
