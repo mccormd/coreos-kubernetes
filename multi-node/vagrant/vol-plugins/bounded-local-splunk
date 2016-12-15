@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.1"
+VERSION="0.2"
 
 # Copyright 2016 The Kubernetes Authors.
 #
@@ -16,7 +16,7 @@ VERSION="0.1"
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# splunk-controller provides configuration for controlling a splunk 
+# splunk-controller provides configuration for controlling a splunk
 # universal forwarder with bounded-local volumes for log collection.
 
 # Configuration VARS
@@ -34,7 +34,7 @@ DEBUG="false"
 
 # Simplistic log handling (print to stdout).
 log() {
-        echo "$*"
+        echo "[SPLUNK_PLUGIN] $*"
 }
 
 # call the splunk forwarder REST API using curl.
@@ -48,7 +48,7 @@ splunk_api() {
   [[ "${DEBUG}" == "true" ]] && log "Calling $CALL"
   if ! RESULT=$(eval $CALL 2>&1)
   then
-    log "Splunk API CALL FAILED!"
+    log "splunk API CALL FAILED!"
     [[ "${DEBUG}" == "true"  ]] && log "${RESULT}"
     return 1
   else
@@ -65,16 +65,18 @@ escape_quotes() {
 # Add a universal forwarder config for a bounded-local volume with optional metadata
 add_splunk_monitor() {
         local PUID=$1
-	local META=$2
+        shift
+        local META=$*
+        log "meta is $META"
 
-	local SET_META=""
-	[[ -n "${META}" ]] && SET_META="-d \"_meta=$(escape_quotes ${META})\""
+        local SET_META=""
+        [[ -n "${META}" ]] && SET_META="-d \"_meta=$(escape_quotes ${META})\""
 
         splunk_api POST "/services/data/inputs/monitor" "-d \"name=/applogs/${PUID}/\"" && \
-	splunk_api POST "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}" "${SET_META} -d \"sourcetype=k8s-log\"" && \
+        splunk_api POST "/services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}" "${SET_META} -d \"sourcetype=k8s-log\"" && \
         splunk_api GET "/services/data/inputs/monitor/_reload"
         if [[ "$?" -eq 0 ]]; then
-                log "[CHANGE] Created splunk monitor and updated with pod metadata .. ok"
+                log "Created splunk monitor and updated with pod metadata .. ok"
                 splunk_api GET /services/properties/inputs/monitor%3A%2F%2F%2Fapplogs%2F${PUID}
         else
                 log "ERROR creating splunk monior!"
@@ -89,11 +91,10 @@ remove_splunk_monitor() {
         local PUID=$1
 
         log "Removing splunk monitor for ${PUID}"
-
         splunk_api DELETE "/services/data/inputs/monitor/%252Fapplogs%252F${PUID}"  && \
         splunk_api GET "/services/data/inputs/monitor/_reload"
         if [[ "$?" -eq 0 ]]; then
-                log "[CHANGE] Successfully removed splunk monitor .. ok"
+                log "Successfully removed splunk monitor .. ok"
         else
                 log "ERROR removing splunk monior!"
                 return 1
@@ -112,10 +113,10 @@ check_splunk_monitor() {
 }
 
 usage() {
-	echo "Usage: -"
-	echo "splunk-controller check pod-uid"
-	echo "splunk-controller add pod-uid [meta-data]"
-	echo "splunk-controller remove pod-uid"
+        echo "Usage: -"
+        echo "splunk-controller check pod-uid"
+        echo "splunk-controller add pod-uid [meta-data]"
+        echo "splunk-controller remove pod-uid"
 }
 
 ###########################################################################
@@ -125,7 +126,7 @@ op=$1
 
 if [[ $# -lt 2 ]]; then
         usage
-	exit 1
+        exit 1
 fi
 
 shift
@@ -139,7 +140,7 @@ case "$op" in
                 ;;
         *)
                 usage
-		exit 1
+                exit 1
 esac
 
 exit $?

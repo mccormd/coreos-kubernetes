@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.6"
+VERSION="0.7"
 
 # Copyright 2016 The Kubernetes Authors.
 #
@@ -79,16 +79,16 @@ get_pod_metadata() {
 
         for META in namespace::namespace podname::pod labels::label
         do
-		METAKEY=${META%%::*}
-		METADISPLAY=${META##*::}
+                METAKEY=${META%%::*}
+                METADISPLAY=${META##*::}
                 for ELEMENT in $(lookup_metadata_item ${METAKEY} ${VOL})
                 do
                         if [[ -n "${ELEMENT}" ]]; then
                                 ELEMENT=$(echo ${ELEMENT} | sed -e 's/%20/ /g')
                                 if [[ "${ELEMENT}" =~ = ]]; then
                                         # structured key=value type fields become k8s_meta_key::value
-					KEY=${ELEMENT%%=*}	
-					VALUE=${ELEMENT##*=}
+                                        KEY=${ELEMENT%%=*}
+                                        VALUE=${ELEMENT##*=}
                                         [[ -z "${METALINE}" ]] && METALINE="k8s_${METADISPLAY}_${KEY,,}::${VALUE}" || METALINE+=" k8s_${METADISPLAY}_${KEY,,}::${VALUE}"
                                 else
                                         # simple value type fields become k8s_meta::value
@@ -119,15 +119,21 @@ check_logging_mirror() {
                 fi
         fi
 
-        # if using a log collector plugin then call out to check it and configure if needed. 
-	if [[ -n "${LOGGING_BACKEND_PLUGIN}" ]]; then
-        	if ! ${LOGGING_BACKEND_PLUGIN} check ${PODUID}; then
-                	if ! ${LOGGING_BACKEND_PLUGIN} add ${PODUID} "$(get_pod_metadata ${VOL})"; then
-				log "ERROR! Could not configure the log monitor via the ${LOGGING_BACKEND_PLUGIN} logging plugin."
-				return 1
-			fi
-        	fi
-	fi
+        # if using a log collector plugin then call out to check it and configure if needed.
+        if [[ -n "${LOGGING_BACKEND_PLUGIN}" ]]; then
+                log "Running ${LOGGING_BACKEND_PLUGIN} check ${PODUID}"
+                if ! ${LOGGING_BACKEND_PLUGIN} check ${PODUID}; then
+                        local META=$(get_pod_metadata ${VOL})
+                        log "POD META is ${META}"
+                        log "Running ${LOGGING_BACKEND_PLUGIN} add ${PODUID} \"${META}\""
+                        if ! ${LOGGING_BACKEND_PLUGIN} add ${PODUID} "${META}"; then
+                                log "ERROR! Could not configure the log monitor via the ${LOGGING_BACKEND_PLUGIN} logging plugin."
+                                return 1
+                        fi
+                fi
+        else
+                log "BACKEND LOGGING NOT ENABLED!"
+        fi
 
         return 0
 }
@@ -141,21 +147,22 @@ remove_logging_mirror() {
         local PODUID=${PODUID##*/}
         local LOGMOUNT="${LOGGING_PATH}/${PODUID}"
 
-	# Call out to the logging collector plugin to remove any local configuration
-	if [[ -n "${LOGGING_BACKEND_PLUGIN}" ]]; then
-		if ! ${LOGGING_BACKEND_PLUGIN} remove ${PODUID}; then
-			log "ERROR! Removing logging configuration via the ${LOGGING_BACKEND_PLUGIN} logging plugin."
-			return 1
-		fi
-	fi
+        # Call out to the logging collector plugin to remove any local configuration
+        if [[ -n "${LOGGING_BACKEND_PLUGIN}" ]]; then
+                log "Running ${LOGGING_BACKEND_PLUGIN} remove ${PODUID}"
+                if ! ${LOGGING_BACKEND_PLUGIN} remove ${PODUID}; then
+                        log "ERROR! Removing logging configuration via the ${LOGGING_BACKEND_PLUGIN} logging plugin."
+                        return 1
+                fi
+        fi
 
-	# remove the logging volume copy...
+        # remove the logging volume copy...
         if ismounted ${LOGMOUNT}; then
                 log "[CHANGE] Un-mounting and removing ${LOGMOUNT}"
                 umount -l ${LOGMOUNT}
                 rm -rf ${LOGMOUNT}
         fi
-	return 0
+        return 0
 }
 
 #################################################################################################################
@@ -164,6 +171,7 @@ remove_logging_mirror() {
 while true; do
         log "*** "
         log "*** Running bounded-local-controller (${VERSION}) main loop over ${VOLUME_PATH} "
+        log "LOGGING_BACKEND_PLUGIN=${LOGGING_BACKEND_PLUGIN}"
         log "*** "
         for VOL in ${VOLUME_PATH}/*
         do
@@ -177,9 +185,9 @@ while true; do
                 WHEN=$(cat ${VOL}/status | awk '{print $2}')
                 MNTPATH=$(cat ${VOL}/mountpath)
 
-		# always maintain logging mirror regarless of volume status (to give short lived pods a chance to log)
+                # always maintain logging mirror regarless of volume status (to give short lived pods a chance to log)
                 if [[ -f "${VOL}/mirror" ]]; then
-                	[[ $(cat "${VOL}/mirror") == "true" ]] && check_logging_mirror ${VOL}
+                        [[ $(cat "${VOL}/mirror") == "true" ]] && check_logging_mirror ${VOL}
                 fi
 
                 case ${STATUS} in
