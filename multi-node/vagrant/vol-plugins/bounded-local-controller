@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.5"
+VERSION="0.6"
 
 # Copyright 2016 The Kubernetes Authors.
 #
@@ -28,12 +28,13 @@ DEFAULT_LOGGING_PATH=/var/log-collection
 DEBUG="false"
 
 # Logging backend plugin (splunk is only option at present)
-LOGGING_BACKEND_PLUGIN="/opt/bin/bounded-local-splunk"
+DEFAULT_LOGGING_BACKEND_PLUGIN=""
 
 [[ -z "${VOLUME_PATH}" ]] && VOLUME_PATH=${DEFAULT_PATH}
 [[ ! -e "${VOLUME_PATH}" ]] && mkdir -p ${VOLUME_PATH}
 [[ -z "${LOGGING_PATH}" ]] && LOGGING_PATH=${DEFAULT_LOGGING_PATH}
 [[ ! -e "${LOGGING_PATH}" ]] && mkdir -p ${LOGGING_PATH}
+[[ -z "${LOGGING_BACKEND_PLUGIN}" ]] && LOGGING_BACKEND_PLUGIN=${DEFAULT_LOGGING_BACKEND_PLUGIN}
 
 # log to syslog...
 log() {

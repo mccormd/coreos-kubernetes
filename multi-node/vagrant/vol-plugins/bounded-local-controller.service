@@ -5,6 +5,7 @@ Description=Runs the bounded-local-controller for managing bounded-local volumes
 Environment=RUN_LOOP_DELAY=10
 Environment=VOLUME_PATH=/var/lib/kubelet/bounded-local
 Environment=LOGGING_PATH=/var/log-collection
+Environment=LOGGING_BACKEND_PLUGIN=/opt/bin/bounded-local-splunk
 ExecStart=/bin/bash -c "systemd-cat -t bounded-local-controller /opt/bin/bounded-local-controller"
 Type=simple
 Restart=on-failure
