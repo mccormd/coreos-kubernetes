@@ -1,0 +1,18 @@
+apiVersion: extensions/v1beta1
+kind: ReplicaSet
+metadata:
+  name: rhel-tools
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: rhel-tools
+    spec:
+      containers:
+      - name: rhel-tools
+        image: gcr.io/google_containers/echoserver:1.4
+        command:
+        - /bin/bash
+        - -c
+        - sleep 9999999
