@@ -1,0 +1,11 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: nginx-config
+  namespace: kube-system
+  labels:
+    kubernetes.io/cluster-service: "true"
+data:
+  use-proxy-protocol: "true"
+  server-name-hash-bucket-size: "64"
+  server-name-hash-max-size: "1024"

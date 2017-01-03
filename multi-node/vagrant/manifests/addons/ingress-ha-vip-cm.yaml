@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingress-ha-vip
+  namespace: kube-system
+  labels:
+    kubernetes.io/cluster-service: "true"
+data:
+  ${INGRESS_NGINX_VIP}: kube-system/nginx-ingress-controller:PROXY
